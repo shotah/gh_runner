@@ -7,7 +7,8 @@ SHELL := /bin/bash
 export
 
 .PHONY: help install build deploy destroy diff synth clean \
-        setup-token get-secret logs security-check bootstrap npm-upgrade
+        setup-token get-secret logs security-check bootstrap npm-upgrade \
+        flags flags-recommended flags-safe
 
 # Default target
 help:
@@ -28,8 +29,12 @@ help:
 	@echo "Development:"
 	@echo "  make diff             - Show changes that will be deployed"
 	@echo "  make synth            - Synthesize CloudFormation template"
+	@echo "  make validate         - Validate CDK templates"
 	@echo "  make clean            - Remove build artifacts"
 	@echo "  make npm-upgrade      - Upgrade all npm packages to latest"
+	@echo "  make flags            - Show all CDK feature flags"
+	@echo "  make flags-recommended - Set recommended values for unconfigured flags"
+	@echo "  make flags-safe       - Safely set flags that don't change templates"
 	@echo ""
 	@echo "Monitoring:"
 	@echo "  make logs             - View Lambda function logs (interactive)"
@@ -202,4 +207,33 @@ npm-upgrade:
 	else \
 		echo "Cancelled."; \
 	fi
+
+# Show CDK feature flags
+flags:
+	@echo "🚩 CDK Feature Flags (unconfigured only):"
+	cdk flags --unstable=flags
+
+# Show all flags (including configured)
+flags-all:
+	@echo "🚩 All CDK Feature Flags:"
+	cdk flags --all --unstable=flags
+
+# Set recommended values for unconfigured flags
+flags-recommended: build
+	@echo "🚩 Setting recommended values for unconfigured CDK feature flags..."
+	@echo "⚠️  This will update cdk.json with recommended feature flag values"
+	@read -p "Continue? [y/N] " -n 1 -r; \
+	echo; \
+	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
+		cdk flags --set --unconfigured --recommended --unstable=flags; \
+		echo "✅ Feature flags updated! Run 'make diff' to see changes."; \
+	else \
+		echo "Cancelled."; \
+	fi
+
+# Safely set flags that don't change templates
+flags-safe: build
+	@echo "🚩 Setting safe CDK feature flags (no template changes)..."
+	cdk flags --safe --unstable=flags
+	@echo "✅ Safe flags updated!"
 

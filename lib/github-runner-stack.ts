@@ -64,6 +64,13 @@ export class GithubRunnerStack extends cdk.Stack {
       platform: ecr_assets.Platform.LINUX_AMD64,
     });
 
+    // Create log group for runner function
+    const runnerLogGroup = new logs.LogGroup(this, 'RunnerLogGroup', {
+      logGroupName: '/aws/lambda/github-runner-executor',
+      retention: logs.RetentionDays.ONE_WEEK,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
     // Runner Lambda function
     const runnerFunction = new lambda.DockerImageFunction(this, 'RunnerFunction', {
       functionName: 'github-runner-executor',
@@ -77,7 +84,7 @@ export class GithubRunnerStack extends cdk.Stack {
         GITHUB_TOKEN_SECRET_NAME: githubTokenSecret.secretName,
         // Note: Runner version is auto-detected from pre-installed runner in Docker image
       },
-      logRetention: logs.RetentionDays.ONE_WEEK,
+      logGroup: runnerLogGroup,
       // Note: No reserved concurrency - allows unlimited parallel jobs up to account limits
       // Uncomment to limit concurrent runners: reservedConcurrentExecutions: 10,
     });
@@ -205,6 +212,13 @@ export class GithubRunnerStack extends cdk.Stack {
     // Lambda - Webhook Receiver
     // ============================================
     
+    // Create log group for webhook function
+    const webhookLogGroup = new logs.LogGroup(this, 'WebhookLogGroup', {
+      logGroupName: '/aws/lambda/github-runner-webhook',
+      retention: logs.RetentionDays.ONE_WEEK,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+    
     const webhookFunction = new lambda.Function(this, 'WebhookFunction', {
       functionName: 'github-runner-webhook',
       runtime: lambda.Runtime.PYTHON_3_13,
@@ -216,7 +230,7 @@ export class GithubRunnerStack extends cdk.Stack {
         GITHUB_WEBHOOK_SECRET_ARN: webhookSecret.secretArn,
         RUNNER_FUNCTION_NAME: runnerFunction.functionName,
       },
-      logRetention: logs.RetentionDays.ONE_WEEK,
+      logGroup: webhookLogGroup,
     });
 
     // Grant webhook function permissions
