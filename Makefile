@@ -1,5 +1,13 @@
+# Load environment variables from .env file if it exists
+.SILENT:
+ifneq ("$(wildcard .env)","")
+    include .env
+endif
+SHELL := /bin/bash
+export
+
 .PHONY: help install build deploy destroy diff synth clean \
-        setup-token get-secret logs security-check bootstrap
+        setup-token get-secret logs security-check bootstrap npm-upgrade
 
 # Default target
 help:
@@ -21,6 +29,7 @@ help:
 	@echo "  make diff             - Show changes that will be deployed"
 	@echo "  make synth            - Synthesize CloudFormation template"
 	@echo "  make clean            - Remove build artifacts"
+	@echo "  make npm-upgrade      - Upgrade all npm packages to latest"
 	@echo ""
 	@echo "Monitoring:"
 	@echo "  make logs             - View Lambda function logs (interactive)"
@@ -177,4 +186,20 @@ validate: build
 	@echo "✓ Validating CDK templates..."
 	cdk synth --quiet
 	@echo "✅ Templates are valid"
+
+# Upgrade all npm packages to latest version
+npm-upgrade:
+	@echo "📦 Upgrading npm packages to latest versions..."
+	@echo "⚠️  This will update package.json with latest versions"
+	@read -p "Continue? [y/N] " -n 1 -r; \
+	echo; \
+	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
+		npm prune; \
+		npm list -g npm-check-updates || npm i -g npm-check-updates; \
+		npx ncu -u; \
+		npm update; \
+		echo "✅ Packages upgraded! Review changes and test before deploying."; \
+	else \
+		echo "Cancelled."; \
+	fi
 

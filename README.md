@@ -5,6 +5,7 @@ AWS Lambda-based self-hosted GitHub Actions runner with AWS CLI and SAM CLI pre-
 ## 📚 Documentation
 
 - **[Setup Guide](docs/SETUP.md)** - Complete step-by-step setup instructions
+- **[Makefile Guide](docs/MAKEFILE_GUIDE.md)** - All available make commands and workflows
 - **[Architecture](docs/ARCHITECTURE.md)** - System design and component details
 - **[Security](docs/SECURITY.md)** - Security considerations and hardening guide
 - **[Secrets Management](docs/SECRETS_MANAGEMENT.md)** - How to manage GitHub tokens and secrets
@@ -57,6 +58,8 @@ GitHub Webhook → API Gateway → Webhook Lambda → Runner Lambda (with AWS CL
 
 ### Using Make (Recommended)
 
+The Makefile automatically loads environment variables from `.env` file!
+
 ```bash
 # See all available commands
 make help
@@ -73,9 +76,14 @@ make get-secret
 # View logs
 make logs
 
+# Upgrade all npm packages
+make npm-upgrade
+
 # Run security check
 make security-check
 ```
+
+> 💡 See **[docs/MAKEFILE_GUIDE.md](docs/MAKEFILE_GUIDE.md)** for complete command reference!
 
 ### Manual Setup
 
