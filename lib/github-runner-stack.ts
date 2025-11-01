@@ -13,18 +13,35 @@ export class GithubRunnerStack extends cdk.Stack {
     super(scope, id, props);
 
     // ============================================
+    // Tags - For Cost Tracking & Resource Management
+    // ============================================
+    
+    cdk.Tags.of(this).add('Project', 'github-runner');
+    cdk.Tags.of(this).add('ManagedBy', 'CDK');
+    cdk.Tags.of(this).add('Environment', process.env.ENVIRONMENT || 'dev');
+    cdk.Tags.of(this).add('CostCenter', process.env.COST_CENTER || 'Engineering');
+    cdk.Tags.of(this).add('Owner', process.env.OWNER || 'DevOps');
+
+    // ============================================
     // Secrets Manager - Store GitHub Token
     // ============================================
     
     // GitHub Personal Access Token (PAT) or GitHub App token
-    // You'll need to manually set this after deployment
+    // Can be provided via GITHUB_TOKEN environment variable during deployment
+    const githubToken = process.env.GITHUB_TOKEN || 'REPLACE_ME';
+    
+    // Warn if token is not provided
+    if (githubToken === 'REPLACE_ME') {
+      console.warn('\n⚠️  WARNING: GITHUB_TOKEN environment variable not set!');
+      console.warn('   The secret will be created with placeholder value.');
+      console.warn('   You must update it before the runner can work:');
+      console.warn('   aws secretsmanager put-secret-value --secret-id github-runner/token --secret-string "ghp_yourTokenHere"\n');
+    }
+    
     const githubTokenSecret = new secretsmanager.Secret(this, 'GithubToken', {
       secretName: 'github-runner/token',
       description: 'GitHub Personal Access Token or App token for runner registration',
-      generateSecretString: {
-        secretStringTemplate: JSON.stringify({ token: 'REPLACE_ME' }),
-        generateStringKey: 'generated',
-      },
+      secretStringValue: cdk.SecretValue.unsafePlainText(githubToken),
     });
 
     // Optional: GitHub Webhook Secret for signature verification
@@ -58,17 +75,32 @@ export class GithubRunnerStack extends cdk.Stack {
       ephemeralStorageSize: cdk.Size.gibibytes(10), // Max ephemeral storage
       environment: {
         GITHUB_TOKEN_SECRET_NAME: githubTokenSecret.secretName,
-        RUNNER_VERSION: '2.311.0',
+        // Note: Runner version is auto-detected from pre-installed runner in Docker image
       },
       logRetention: logs.RetentionDays.ONE_WEEK,
-      reservedConcurrentExecutions: 10, // Limit concurrent runners
+      // Note: No reserved concurrency - allows unlimited parallel jobs up to account limits
+      // Uncomment to limit concurrent runners: reservedConcurrentExecutions: 10,
     });
 
     // Grant runner permissions
     githubTokenSecret.grantRead(runnerFunction);
     
-    // Grant runner broad AWS permissions (for AWS CLI and SAM CLI)
-    // NOTE: You should scope these down based on your specific needs
+    // ============================================
+    // ⚠️  SECURITY WARNING: OVERLY BROAD PERMISSIONS
+    // ============================================
+    // These permissions grant near-admin access to many AWS services.
+    // This is convenient for getting started but DANGEROUS in production!
+    //
+    // BEFORE DEPLOYING TO PRODUCTION:
+    // 1. Review SECURITY.md for detailed scoping guidance
+    // 2. Limit 'resources: ["*"]' to specific resource ARNs
+    // 3. Remove unused service permissions (DynamoDB, SQS, etc.)
+    // 4. Consider separate runner stacks per environment/team
+    // 5. Use resource tags and IAM conditions for additional controls
+    //
+    // Remember: Any code in your GitHub workflows runs with these permissions!
+    // ============================================
+    
     runnerFunction.addToRolePolicy(new iam.PolicyStatement({
       effect: iam.Effect.ALLOW,
       actions: [

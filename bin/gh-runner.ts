@@ -2,6 +2,10 @@
 import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
 import { GithubRunnerStack } from '../lib/github-runner-stack';
+import * as dotenv from 'dotenv';
+
+// Load environment variables from .env file (if it exists)
+dotenv.config();
 
 const app = new cdk.App();
 

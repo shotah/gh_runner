@@ -2,6 +2,15 @@
 
 AWS Lambda-based self-hosted GitHub Actions runner with AWS CLI and SAM CLI pre-installed. This solution provides on-demand, serverless execution of GitHub Actions workflows with automatic scaling and cost optimization.
 
+## 📚 Documentation
+
+- **[Setup Guide](docs/SETUP.md)** - Complete step-by-step setup instructions
+- **[Architecture](docs/ARCHITECTURE.md)** - System design and component details
+- **[Security](docs/SECURITY.md)** - Security considerations and hardening guide
+- **[Secrets Management](docs/SECRETS_MANAGEMENT.md)** - How to manage GitHub tokens and secrets
+- **[Tagging Strategy](docs/TAGGING_STRATEGY.md)** - Cost tracking and resource organization
+- **[Contributing](docs/CONTRIBUTING.md)** - Development and contribution guidelines
+
 ## Architecture
 
 ```
@@ -44,6 +53,8 @@ GitHub Webhook → API Gateway → Webhook Lambda → Runner Lambda (with AWS CL
 
 ## Quick Start
 
+> 💡 **New to this project?** Start with **[docs/SETUP.md](docs/SETUP.md)** for complete setup instructions!
+
 ### Using Make (Recommended)
 
 ```bash
@@ -53,7 +64,7 @@ make help
 # Complete setup in one command
 make quick-deploy
 
-# Configure GitHub token
+# Configure GitHub token (or use .env file - see docs/SECRETS_MANAGEMENT.md)
 make setup-token
 
 # Get webhook secret for GitHub
@@ -111,6 +122,8 @@ aws secretsmanager put-secret-value \
 - `repo` (full control)
 - `workflow`
 - `admin:org` → `read:org` (for organization runners)
+
+> 💡 See **[docs/SECRETS_MANAGEMENT.md](docs/SECRETS_MANAGEMENT.md)** for different ways to provide your GitHub token!
 
 ### 5. Get Webhook Secret
 
@@ -188,21 +201,33 @@ jobs:
 The runner Lambda function supports these environment variables:
 
 - `GITHUB_TOKEN_SECRET_NAME`: Secrets Manager secret containing GitHub token
-- `RUNNER_VERSION`: GitHub Actions runner version (default: 2.311.0)
+- Runner version is automatically detected from the pre-installed runner in the Docker image
 
 ### Customizing Permissions
 
-Edit `lib/github-runner-stack.ts` to adjust IAM permissions based on your needs. The default configuration includes broad permissions for:
-- CloudFormation (SAM deployments)
-- Lambda, API Gateway, DynamoDB, S3, etc.
-- ECR, IAM, CloudWatch Logs
+⚠️ **Important:** The default IAM permissions are very broad! 
+
+Edit `lib/github-runner-stack.ts` to adjust IAM permissions based on your needs. See **[docs/SECURITY.md](docs/SECURITY.md)** for guidance on scoping down permissions.
+
+### Resource Tagging
+
+All resources are tagged for cost tracking. Customize tags via environment variables:
+
+```bash
+ENVIRONMENT=production
+COST_CENTER=Platform
+OWNER=devops-team
+npm run deploy
+```
+
+See **[docs/TAGGING_STRATEGY.md](docs/TAGGING_STRATEGY.md)** for details on cost tracking and tag management.
 
 ### Adjusting Concurrency
 
-By default, the runner supports up to 10 concurrent executions. Modify in `lib/github-runner-stack.ts`:
+By default, there's no reserved concurrency (unlimited parallel jobs). To limit concurrent runners, uncomment in `lib/github-runner-stack.ts`:
 
 ```typescript
-reservedConcurrentExecutions: 10, // Change this value
+reservedConcurrentExecutions: 10, // Limits to 10 concurrent jobs
 ```
 
 ## Limitations
@@ -245,7 +270,7 @@ For longer workflows, consider:
 
 ## Security Best Practices
 
-⚠️ **IMPORTANT:** Review [SECURITY.md](SECURITY.md) for comprehensive security guidance.
+⚠️ **IMPORTANT:** Review **[docs/SECURITY.md](docs/SECURITY.md)** for comprehensive security guidance.
 
 **Critical Actions:**
 1. **Scope down IAM permissions** - The default is VERY permissive (admin-level for many services)
@@ -261,7 +286,7 @@ For longer workflows, consider:
 - ✅ Ephemeral runners (auto-cleanup)
 - ✅ CloudWatch + CloudTrail logging
 
-See [SECURITY.md](SECURITY.md) for detailed security considerations and hardening steps.
+See **[docs/SECURITY.md](docs/SECURITY.md)** for detailed security considerations and hardening steps.
 
 ## Advanced: Using GitHub Apps (Recommended)
 
@@ -331,7 +356,14 @@ Note: This will delete all Lambda functions, API Gateway, and associated resourc
 
 ## Contributing
 
-Issues and pull requests welcome!
+Issues and pull requests welcome! See **[docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)** for development guidelines.
+
+## Additional Resources
+
+- **[Example Workflows](examples/)** - Sample GitHub Actions workflows
+- **[Architecture Details](docs/ARCHITECTURE.md)** - Deep dive into system design
+- **[Security Hardening](docs/SECURITY.md)** - Production security checklist
+- **[Cost Optimization](docs/TAGGING_STRATEGY.md)** - Track and optimize AWS costs
 
 ## License
 
