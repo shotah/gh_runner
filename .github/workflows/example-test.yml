@@ -1,0 +1,54 @@
+# This is an example workflow you can use to test the Lambda runner
+# Copy this to your repository's .github/workflows/ directory
+name: Test Lambda Runner
+
+on:
+  workflow_dispatch:  # Manual trigger
+
+jobs:
+  test-runner:
+    # Target the Lambda runner with specific capabilities
+    runs-on: [self-hosted, aws-cli, sam-cli, python3.13]
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Test AWS CLI
+        run: |
+          echo "=== AWS CLI Version ==="
+          aws --version
+      
+      - name: Test SAM CLI
+        run: |
+          echo "=== SAM CLI Version ==="
+          sam --version
+      
+      - name: System Information
+        run: |
+          echo "=== System Info ==="
+          echo "Runner: $RUNNER_NAME"
+          echo "OS: $RUNNER_OS"
+          echo "Arch: $RUNNER_ARCH"
+          echo "Working Dir: $(pwd)"
+          echo ""
+          echo "=== Disk Space ==="
+          df -h /tmp
+          echo ""
+          echo "=== Memory ==="
+          free -h
+      
+      - name: Test AWS Commands
+        run: |
+          echo "=== AWS Account Info ==="
+          aws sts get-caller-identity
+          
+          echo ""
+          echo "=== AWS Region ==="
+          aws configure get region || echo "No default region set"
+      
+      - name: Success
+        run: |
+          echo "✅ All tests passed!"
+          echo "Lambda runner is working correctly"
+

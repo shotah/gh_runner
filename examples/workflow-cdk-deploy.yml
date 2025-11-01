@@ -1,0 +1,45 @@
+# Example: CDK deployment with Lambda runner
+name: CDK Deploy with Lambda Runner
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  deploy:
+    # Target runner with AWS CLI and Python capabilities
+    runs-on: [self-hosted, aws-cli, python3.13]
+    
+    permissions:
+      id-token: write
+      contents: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: CDK Synth
+        run: npx cdk synth
+      
+      - name: CDK Deploy
+        run: npx cdk deploy --require-approval never
+

@@ -1,0 +1,27 @@
+{
+  "name": "gh-runner",
+  "version": "0.1.0",
+  "description": "AWS Lambda-based GitHub Actions self-hosted runner",
+  "bin": {
+    "gh-runner": "bin/gh-runner.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "cdk": "cdk",
+    "deploy": "cdk deploy",
+    "diff": "cdk diff",
+    "synth": "cdk synth"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "aws-cdk": "^2.120.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.120.0",
+    "constructs": "^10.3.0"
+  }
+}
+
