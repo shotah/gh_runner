@@ -1,11 +1,13 @@
-# GitHub Actions Lambda Runner
+# GitHub Actions Lambda Runner (SAM CLI)
 
 AWS Lambda-based self-hosted GitHub Actions runner with AWS CLI and SAM CLI pre-installed. This solution provides on-demand, serverless execution of GitHub Actions workflows with automatic scaling and cost optimization.
+
+> 💡 **Built with AWS SAM CLI** - Matches the [aws_fastapi_template](https://github.com/shotah/aws_fastapi_template) pattern for team consistency!
 
 ## 📚 Documentation
 
 - **[Setup Guide](docs/SETUP.md)** - Complete step-by-step setup instructions
-- **[Makefile Guide](docs/MAKEFILE_GUIDE.md)** - All available make commands and workflows
+- **[SAM Migration Guide](SAM_MIGRATION.md)** - Why we chose SAM and migration details
 - **[Architecture](docs/ARCHITECTURE.md)** - System design and component details
 - **[Security](docs/SECURITY.md)** - Security considerations and hardening guide
 - **[Secrets Management](docs/SECRETS_MANAGEMENT.md)** - How to manage GitHub tokens and secrets
@@ -46,11 +48,12 @@ GitHub Webhook → API Gateway → Webhook Lambda → Runner Lambda (with AWS CL
 
 ## Prerequisites
 
-- Node.js 18+ and npm
+- AWS SAM CLI ([Installation Guide](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html))
 - AWS CLI configured with appropriate credentials
 - Docker (for building runner image)
-- AWS CDK CLI: `npm install -g aws-cdk`
-- GitHub Personal Access Token or GitHub App
+- GitHub Personal Access Token ([Generate here](https://github.com/settings/tokens))
+
+**No Node.js or TypeScript required!** ✅
 
 ## Quick Start
 
@@ -61,67 +64,87 @@ GitHub Webhook → API Gateway → Webhook Lambda → Runner Lambda (with AWS CL
 The Makefile automatically loads environment variables from `.env` file!
 
 ```bash
-# See all available commands
-make help
+# 1. Build the application
+make build
 
-# Complete setup in one command
-make quick-deploy
+# 2. Deploy to dev environment
+make deploy-dev
 
-# Configure GitHub token (or use .env file - see docs/SECRETS_MANAGEMENT.md)
-make setup-token
+# 3. Get webhook URL and secret
+make get-secret ENV=dev
 
-# Get webhook secret for GitHub
-make get-secret
-
-# View logs
-make logs
-
-# Upgrade all npm packages
-make npm-upgrade
-
-# Run security check
-make security-check
+# 4. Configure in GitHub
+# Settings → Webhooks → Add webhook
+# Use URL and secret from step 3
 ```
 
-> 💡 See **[docs/MAKEFILE_GUIDE.md](docs/MAKEFILE_GUIDE.md)** for complete command reference!
+### Available Commands
+
+```bash
+make help               # Show all commands
+make build              # Build SAM application
+make deploy-dev         # Deploy to dev
+make deploy-prod        # Deploy to production
+make logs ENV=dev       # Tail logs
+make get-secret ENV=dev # Get webhook secret
+make destroy-dev        # Remove dev stack
+```
+
+> 💡 See `make help` for complete command reference!
 
 ### Manual Setup
 
 <details>
 <summary>Click to expand manual installation steps</summary>
 
-### 1. Install Dependencies
+### 1. Build the Application
 
 ```bash
-npm install
+sam build --use-container
 ```
 
-### 2. Bootstrap CDK (first time only)
+This builds both Lambda functions and the Docker image for the runner.
+
+### 2. Deploy the Stack
 
 ```bash
-cdk bootstrap
+sam deploy --guided --config-env dev
 ```
 
-### 3. Deploy the Stack
-
+Or use environment-specific commands:
 ```bash
-npm run build
-cdk deploy
+sam deploy --config-env sandbox  # Sandbox environment
+sam deploy --config-env dev      # Development environment
+sam deploy --config-env prod     # Production environment
 ```
 
 Note the outputs:
 - `WebhookUrl`: Your API Gateway endpoint
-- `GithubTokenSecretArn`: Secret to update with your GitHub token
+- `GitHubTokenSecretArn`: Secret to update with your GitHub token
 - `WebhookSecretArn`: Secret for webhook validation
+- `ECRRepositoryUri`: Where to push the runner Docker image
 
-### 4. Configure GitHub Token
-
-Update the GitHub token secret with your actual token:
+### 3. Configure GitHub Token
 
 ```bash
 aws secretsmanager put-secret-value \
-  --secret-id github-runner/token \
-  --secret-string '{"token":"YOUR_GITHUB_PAT_HERE"}'
+  --secret-id github-runner/token-dev \
+  --secret-string "ghp_yourTokenHere"
+```
+
+Or use the helper:
+```bash
+make setup-token ENV=dev
+```
+
+### 4. Build and Push Docker Image
+
+```bash
+# Build the runner Docker image
+make docker-build
+
+# Push to ECR
+make docker-push ENV=dev
 ```
 
 </details>
@@ -136,12 +159,12 @@ aws secretsmanager put-secret-value \
 ### 5. Get Webhook Secret
 
 ```bash
-# Using Make
-make get-secret
+# Using Make (shows URL and secret)
+make get-secret ENV=dev
 
 # Or manually
 aws secretsmanager get-secret-value \
-  --secret-id github-runner/webhook-secret \
+  --secret-id github-runner/webhook-secret-dev \
   --query SecretString \
   --output text
 ```
@@ -209,34 +232,37 @@ jobs:
 The runner Lambda function supports these environment variables:
 
 - `GITHUB_TOKEN_SECRET_NAME`: Secrets Manager secret containing GitHub token
+- `ENVIRONMENT`: Deployment environment (sandbox/dev/prod)
 - Runner version is automatically detected from the pre-installed runner in the Docker image
 
 ### Customizing Permissions
 
 ⚠️ **Important:** The default IAM permissions are very broad! 
 
-Edit `lib/github-runner-stack.ts` to adjust IAM permissions based on your needs. See **[docs/SECURITY.md](docs/SECURITY.md)** for guidance on scoping down permissions.
+Edit `template.yaml` to adjust IAM permissions based on your needs. See **[docs/SECURITY.md](docs/SECURITY.md)** for guidance on scoping down permissions.
 
 ### Resource Tagging
 
-All resources are tagged for cost tracking. Customize tags via environment variables:
+All resources are tagged for cost tracking. Customize tags via parameters:
 
+```bash
+# In samconfig.toml
+parameter_overrides = [
+    "Environment=production",
+    "CostCenter=Platform",
+    "Owner=Platform-Team"
+]
+```
+
+Or via `.env` file (automatically loaded by Makefile):
 ```bash
 ENVIRONMENT=production
 COST_CENTER=Platform
 OWNER=devops-team
-npm run deploy
+make deploy-prod
 ```
 
 See **[docs/TAGGING_STRATEGY.md](docs/TAGGING_STRATEGY.md)** for details on cost tracking and tag management.
-
-### Adjusting Concurrency
-
-By default, there's no reserved concurrency (unlimited parallel jobs). To limit concurrent runners, uncomment in `lib/github-runner-stack.ts`:
-
-```typescript
-reservedConcurrentExecutions: 10, // Limits to 10 concurrent jobs
-```
 
 ## Limitations
 

@@ -1,0 +1,82 @@
+version = 0.1
+
+[default.global.parameters]
+stack_name = "github-runner"
+
+[default.build.parameters]
+cached = true
+parallel = true
+
+[default.validate.parameters]
+lint = true
+
+[default.deploy.parameters]
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = true
+resolve_s3 = true
+region = "us-east-1"
+image_repositories = ["RunnerFunction=REPOSITORY_URI_HERE"]
+
+[default.package.parameters]
+resolve_s3 = true
+
+[default.sync.parameters]
+watch = true
+
+[default.local_start_api.parameters]
+warm_containers = "EAGER"
+
+[default.local_start_lambda.parameters]
+warm_containers = "EAGER"
+
+# ============================================
+# Sandbox Environment
+# ============================================
+[sandbox.deploy.parameters]
+stack_name = "github-runner-sandbox"
+resolve_s3 = true
+s3_prefix = "github-runner-sandbox"
+region = "us-east-1"
+confirm_changeset = false
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = [
+    "Environment=sandbox",
+    "CostCenter=Engineering",
+    "Owner=DevOps"
+]
+tags = "Environment=sandbox Project=github-runner ManagedBy=SAM"
+
+# ============================================
+# Development Environment  
+# ============================================
+[dev.deploy.parameters]
+stack_name = "github-runner-dev"
+resolve_s3 = true
+s3_prefix = "github-runner-dev"
+region = "us-east-1"
+confirm_changeset = false
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = [
+    "Environment=dev",
+    "CostCenter=Engineering",
+    "Owner=DevOps"
+]
+tags = "Environment=dev Project=github-runner ManagedBy=SAM"
+
+# ============================================
+# Production Environment
+# ============================================
+[prod.deploy.parameters]
+stack_name = "github-runner-prod"
+resolve_s3 = true
+s3_prefix = "github-runner-prod"
+region = "us-east-1"
+confirm_changeset = true  # Require confirmation for prod!
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = [
+    "Environment=prod",
+    "CostCenter=Platform",
+    "Owner=Platform-Team"
+]
+tags = "Environment=prod Project=github-runner ManagedBy=SAM"
+

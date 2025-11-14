@@ -6,234 +6,276 @@ endif
 SHELL := /bin/bash
 export
 
-.PHONY: help install build deploy destroy diff synth clean \
-        setup-token get-secret logs security-check bootstrap npm-upgrade \
-        flags flags-recommended flags-safe
+.PHONY: help build deploy deploy-sandbox deploy-dev deploy-prod \
+        destroy destroy-sandbox destroy-dev destroy-prod \
+        clean clean-cache docker-build docker-push \
+        setup-token get-secret logs validate
 
 # Default target
 help:
-	@echo "GitHub Actions Lambda Runner - Available Commands"
-	@echo "=================================================="
+	@echo "GitHub Actions Lambda Runner (SAM CLI) - Available Commands"
+	@echo "============================================================="
 	@echo ""
-	@echo "Setup & Deployment:"
-	@echo "  make install          - Install Node.js dependencies"
-	@echo "  make build            - Build TypeScript code"
-	@echo "  make bootstrap        - Bootstrap CDK (first time only)"
-	@echo "  make deploy           - Deploy the stack to AWS"
-	@echo "  make destroy          - Remove all AWS resources"
+	@echo "Setup & Building:"
+	@echo "  make build            - Build SAM application (includes Docker)"
+	@echo "  make docker-build     - Build runner Docker image"
+	@echo "  make docker-push ENV  - Push Docker image to ECR (ENV=sandbox|dev|prod)"
+	@echo "  make validate         - Validate SAM template"
+	@echo ""
+	@echo "Deployment:"
+	@echo "  make deploy           - Interactive guided deployment"
+	@echo "  make deploy-sandbox   - Deploy to sandbox (auto-confirm)"
+	@echo "  make deploy-dev       - Deploy to dev (auto-confirm)"
+	@echo "  make deploy-prod      - Deploy to prod (requires confirmation)"
 	@echo ""
 	@echo "Configuration:"
-	@echo "  make setup-token      - Configure GitHub Personal Access Token"
-	@echo "  make get-secret       - Display webhook secret for GitHub config"
-	@echo ""
-	@echo "Development:"
-	@echo "  make diff             - Show changes that will be deployed"
-	@echo "  make synth            - Synthesize CloudFormation template"
-	@echo "  make validate         - Validate CDK templates"
-	@echo "  make clean            - Remove build artifacts"
-	@echo "  make npm-upgrade      - Upgrade all npm packages to latest"
-	@echo "  make flags            - Show all CDK feature flags"
-	@echo "  make flags-recommended - Set recommended values for unconfigured flags"
-	@echo "  make flags-safe       - Safely set flags that don't change templates"
+	@echo "  make setup-token ENV  - Configure GitHub token in Secrets Manager"
+	@echo "  make get-secret ENV   - Display webhook secret for GitHub config"
 	@echo ""
 	@echo "Monitoring:"
-	@echo "  make logs             - View Lambda function logs (interactive)"
-	@echo "  make security-check   - Run security audit"
+	@echo "  make logs ENV         - Tail Lambda logs (ENV=sandbox|dev|prod)"
+	@echo "  make logs-webhook ENV - Tail webhook logs only"
+	@echo "  make logs-runner ENV  - Tail runner logs only"
+	@echo ""
+	@echo "Teardown:"
+	@echo "  make destroy-sandbox  - Destroy sandbox stack (auto-confirm)"
+	@echo "  make destroy-dev      - Destroy dev stack (auto-confirm)"
+	@echo "  make destroy-prod     - Destroy prod stack (requires confirmation)"
+	@echo ""
+	@echo "Maintenance:"
+	@echo "  make clean            - Clean build artifacts"
+	@echo "  make clean-cache      - Clean SAM cache and Docker containers"
 	@echo ""
 	@echo "Quick Start:"
-	@echo "  make install && make build && make deploy"
+	@echo "  make build && make deploy-dev"
 
-# Install dependencies
-install:
-	@echo "📦 Installing dependencies..."
-	npm install
+# ============================================
+# Build Commands
+# ============================================
 
-# Build TypeScript
+# Build SAM application
 build:
-	@echo "🔨 Building TypeScript..."
-	npm run build
+	@echo "🔨 Building SAM application..."
+	sam build --use-container
 
-# Bootstrap CDK (first time only)
-bootstrap:
-	@echo "🔧 Bootstrapping CDK..."
-	cdk bootstrap
+# Build just the Docker image for runner
+docker-build:
+	@echo "🐳 Building runner Docker image..."
+	@cd lambda/runner && docker build -t github-runner-executor:latest .
 
-# Deploy to AWS
+# Push Docker image to ECR
+docker-push:
+ifndef ENV
+	@echo "❌ Error: ENV not specified. Usage: make docker-push ENV=dev"
+	@exit 1
+endif
+	@echo "🚀 Pushing Docker image to ECR for $(ENV) environment..."
+	@aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin $$(aws sts get-caller-identity --query Account --output text).dkr.ecr.us-east-1.amazonaws.com
+	@REPO_URI=$$(aws cloudformation describe-stacks --stack-name github-runner-$(ENV) --query "Stacks[0].Outputs[?OutputKey=='ECRRepositoryUri'].OutputValue" --output text 2>/dev/null || echo ""); \
+	if [ -z "$$REPO_URI" ]; then \
+		echo "❌ Error: Stack github-runner-$(ENV) not found or ECR repository not created"; \
+		exit 1; \
+	fi; \
+	docker tag github-runner-executor:latest $$REPO_URI:latest; \
+	docker push $$REPO_URI:latest; \
+	echo "✅ Image pushed to $$REPO_URI:latest"
+
+# Validate SAM template
+validate:
+	@echo "✓ Validating SAM template..."
+	@sam validate --lint
+	@echo "✅ Template is valid"
+
+# ============================================
+# Deployment Commands
+# ============================================
+
+# Interactive deployment
 deploy: build
-	@echo "🚀 Deploying to AWS..."
-	cdk deploy --require-approval never
+	@echo "🚀 Starting guided deployment..."
+	sam deploy --guided
 
-# Deploy with approval
-deploy-confirm: build
-	@echo "🚀 Deploying to AWS (with confirmation)..."
-	cdk deploy
+# Deploy to sandbox (auto-confirm)
+deploy-sandbox: build
+	@echo "🚀 Deploying to sandbox environment..."
+	@sam deploy --config-env sandbox --no-confirm-changeset
+	@echo "✅ Sandbox deployment complete!"
+	@$(MAKE) get-secret ENV=sandbox
 
-# Show diff
-diff: build
-	@echo "🔍 Showing deployment diff..."
-	cdk diff
+# Deploy to dev (auto-confirm)
+deploy-dev: build
+	@echo "🚀 Deploying to dev environment..."
+	@sam deploy --config-env dev --no-confirm-changeset
+	@echo "✅ Dev deployment complete!"
+	@$(MAKE) get-secret ENV=dev
 
-# Synthesize CloudFormation
-synth: build
-	@echo "📝 Synthesizing CloudFormation template..."
-	cdk synth
-
-# Destroy stack
-destroy:
-	@echo "💣 Destroying stack..."
-	@echo "⚠️  This will remove all resources!"
+# Deploy to prod (requires confirmation)
+deploy-prod: build
+	@echo "🚀 Deploying to prod environment..."
+	@echo "⚠️  This will deploy to PRODUCTION!"
 	@read -p "Are you sure? [y/N] " -n 1 -r; \
 	echo; \
 	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
-		cdk destroy; \
+		sam deploy --config-env prod; \
+		echo "✅ Prod deployment complete!"; \
+		$(MAKE) get-secret ENV=prod; \
 	else \
 		echo "Cancelled."; \
 	fi
 
+# ============================================
+# Configuration Commands
+# ============================================
+
 # Setup GitHub token
 setup-token:
-	@bash scripts/setup-github-token.sh
+ifndef ENV
+	@echo "❌ Error: ENV not specified. Usage: make setup-token ENV=dev"
+	@exit 1
+endif
+	@echo "🔑 Configuring GitHub token for $(ENV) environment..."
+	@read -p "Enter GitHub Personal Access Token: " TOKEN; \
+	aws secretsmanager put-secret-value \
+		--secret-id github-runner/token-$(ENV) \
+		--secret-string "$$TOKEN" \
+		--region us-east-1
+	@echo "✅ GitHub token configured!"
 
 # Get webhook secret
 get-secret:
-	@bash scripts/get-webhook-secret.sh
+ifndef ENV
+	@echo "❌ Error: ENV not specified. Usage: make get-secret ENV=dev"
+	@exit 1
+endif
+	@echo "🔐 Webhook Secret for $(ENV) environment:"
+	@echo "================================================"
+	@aws secretsmanager get-secret-value \
+		--secret-id github-runner/webhook-secret-$(ENV) \
+		--query SecretString \
+		--output text \
+		--region us-east-1 2>/dev/null || echo "Secret not found. Deploy first with: make deploy-$(ENV)"
+	@echo ""
+	@echo "🔗 Webhook URL:"
+	@aws cloudformation describe-stacks \
+		--stack-name github-runner-$(ENV) \
+		--query "Stacks[0].Outputs[?OutputKey=='WebhookUrl'].OutputValue" \
+		--output text \
+		--region us-east-1 2>/dev/null || echo "Stack not deployed yet"
 
-# View logs
+# ============================================
+# Monitoring Commands
+# ============================================
+
+# Tail all logs
 logs:
-	@bash scripts/view-logs.sh
+ifndef ENV
+	@echo "❌ Error: ENV not specified. Usage: make logs ENV=dev"
+	@exit 1
+endif
+	@echo "📡 Tailing logs for $(ENV) environment (Ctrl+C to exit)..."
+	@echo "Webhook and Runner logs combined:"
+	@aws logs tail /aws/lambda/github-runner-webhook-$(ENV) --follow --format short & \
+	aws logs tail /aws/lambda/github-runner-executor-$(ENV) --follow --format short
 
-# Security check
-security-check:
-	@bash scripts/check-security.sh
+# Tail webhook logs only
+logs-webhook:
+ifndef ENV
+	@echo "❌ Error: ENV not specified. Usage: make logs-webhook ENV=dev"
+	@exit 1
+endif
+	@echo "📡 Webhook Lambda Logs for $(ENV) (Ctrl+C to exit)..."
+	@aws logs tail /aws/lambda/github-runner-webhook-$(ENV) --follow
+
+# Tail runner logs only
+logs-runner:
+ifndef ENV
+	@echo "❌ Error: ENV not specified. Usage: make logs-runner ENV=dev"
+	@exit 1
+endif
+	@echo "🏃 Runner Lambda Logs for $(ENV) (Ctrl+C to exit)..."
+	@aws logs tail /aws/lambda/github-runner-executor-$(ENV) --follow
+
+# ============================================
+# Teardown Commands
+# ============================================
+
+# Destroy sandbox stack
+destroy-sandbox:
+	@echo "💣 Destroying sandbox stack..."
+	@sam delete --stack-name github-runner-sandbox --no-prompts --region us-east-1
+	@echo "✅ Sandbox stack destroyed"
+
+# Destroy dev stack
+destroy-dev:
+	@echo "💣 Destroying dev stack..."
+	@sam delete --stack-name github-runner-dev --no-prompts --region us-east-1
+	@echo "✅ Dev stack destroyed"
+
+# Destroy prod stack
+destroy-prod:
+	@echo "💣 Destroying prod stack..."
+	@echo "⚠️  This will DESTROY the PRODUCTION stack!"
+	@read -p "Are you sure? Type 'destroy' to confirm: " CONFIRM; \
+	if [ "$$CONFIRM" = "destroy" ]; then \
+		sam delete --stack-name github-runner-prod --region us-east-1; \
+		echo "✅ Prod stack destroyed"; \
+	else \
+		echo "Cancelled."; \
+	fi
+
+# ============================================
+# Maintenance Commands
+# ============================================
 
 # Clean build artifacts
 clean:
 	@echo "🧹 Cleaning build artifacts..."
-	rm -rf dist/
-	rm -rf cdk.out/
-	rm -rf node_modules/
-	rm -f *.js *.d.ts
-	find . -name "*.js" -type f -not -path "./node_modules/*" -delete
-	find . -name "*.d.ts" -type f -not -path "./node_modules/*" -delete
+	@rm -rf .aws-sam/
+	@rm -rf dist/
+	@find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+	@find . -type f -name "*.pyc" -delete 2>/dev/null || true
+	@echo "✅ Build artifacts cleaned"
 
-# Quick deploy (all in one)
-quick-deploy: install deploy
-	@echo "✅ Deployment complete!"
-	@echo ""
-	@echo "Next steps:"
-	@echo "1. Run: make setup-token"
-	@echo "2. Run: make get-secret"
-	@echo "3. Configure GitHub webhook with the secret"
+# Clean SAM cache and Docker
+clean-cache: clean
+	@echo "🧹 Cleaning SAM cache and Docker containers..."
+	@docker system prune -f
+	@echo "✅ Cache cleaned"
 
-# Watch mode for development
-watch:
-	@echo "👀 Watching for changes..."
-	npm run watch
+# ============================================
+# Utility Commands
+# ============================================
 
-# List all Lambda functions
-list-functions:
-	@echo "📋 Lambda Functions:"
-	@aws lambda list-functions \
-		--query "Functions[?starts_with(FunctionName, 'github-runner')].{Name:FunctionName,Runtime:Runtime,Memory:MemorySize,Timeout:Timeout}" \
-		--output table
-
-# Get webhook URL
-get-webhook-url:
-	@echo "🔗 Webhook URL:"
-	@aws cloudformation describe-stacks \
-		--stack-name GithubRunnerStack \
-		--query "Stacks[0].Outputs[?OutputKey=='WebhookUrl'].OutputValue" \
-		--output text
-
-# Complete setup info
-setup-info:
-	@echo "⚙️  Setup Information"
-	@echo "===================="
-	@echo ""
-	@echo "Webhook URL:"
-	@aws cloudformation describe-stacks \
-		--stack-name GithubRunnerStack \
-		--query "Stacks[0].Outputs[?OutputKey=='WebhookUrl'].OutputValue" \
-		--output text || echo "Stack not deployed yet"
-	@echo ""
-	@echo "Webhook Secret:"
-	@aws secretsmanager get-secret-value \
-		--secret-id github-runner/webhook-secret \
-		--query SecretString \
-		--output text 2>/dev/null || echo "Not available yet"
-	@echo ""
-	@echo "GitHub Token Status:"
-	@aws secretsmanager describe-secret \
-		--secret-id github-runner/token \
-		--query '{LastChanged:LastChangedDate,Created:CreatedDate}' \
-		--output table 2>/dev/null || echo "Not configured yet"
-
-# Tail webhook logs
-logs-webhook:
-	@echo "📡 Webhook Lambda Logs (Ctrl+C to exit)..."
-	@aws logs tail /aws/lambda/github-runner-webhook --follow
-
-# Tail runner logs
-logs-runner:
-	@echo "🏃 Runner Lambda Logs (Ctrl+C to exit)..."
-	@aws logs tail /aws/lambda/github-runner-executor --follow
-
-# Check stack status
+# Get stack status
 status:
-	@echo "📊 Stack Status:"
+ifndef ENV
+	@echo "❌ Error: ENV not specified. Usage: make status ENV=dev"
+	@exit 1
+endif
+	@echo "📊 Stack Status for $(ENV):"
 	@aws cloudformation describe-stacks \
-		--stack-name GithubRunnerStack \
+		--stack-name github-runner-$(ENV) \
 		--query "Stacks[0].{Status:StackStatus,Created:CreationTime,Updated:LastUpdatedTime}" \
-		--output table 2>/dev/null || echo "Stack not deployed"
+		--output table \
+		--region us-east-1 2>/dev/null || echo "Stack not deployed"
 
-# Validate templates
-validate: build
-	@echo "✓ Validating CDK templates..."
-	cdk synth --quiet
-	@echo "✅ Templates are valid"
+# List all stacks
+list-stacks:
+	@echo "📋 All GitHub Runner Stacks:"
+	@aws cloudformation list-stacks \
+		--query "StackSummaries[?starts_with(StackName, 'github-runner')].{Name:StackName,Status:StackStatus,Created:CreationTime}" \
+		--output table \
+		--region us-east-1
 
-# Upgrade all npm packages to latest version
-npm-upgrade:
-	@echo "📦 Upgrading npm packages to latest versions..."
-	@echo "⚠️  This will update package.json with latest versions"
-	@read -p "Continue? [y/N] " -n 1 -r; \
-	echo; \
-	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
-		npm prune; \
-		npm list -g npm-check-updates || npm i -g npm-check-updates; \
-		npx ncu -u; \
-		npm update; \
-		echo "✅ Packages upgraded! Review changes and test before deploying."; \
-	else \
-		echo "Cancelled."; \
-	fi
-
-# Show CDK feature flags
-flags:
-	@echo "🚩 CDK Feature Flags (unconfigured only):"
-	cdk flags --unstable=flags
-
-# Show all flags (including configured)
-flags-all:
-	@echo "🚩 All CDK Feature Flags:"
-	cdk flags --all --unstable=flags
-
-# Set recommended values for unconfigured flags
-flags-recommended: build
-	@echo "🚩 Setting recommended values for unconfigured CDK feature flags..."
-	@echo "⚠️  This will update cdk.json with recommended feature flag values"
-	@read -p "Continue? [y/N] " -n 1 -r; \
-	echo; \
-	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
-		cdk flags --set --unconfigured --recommended --unstable=flags; \
-		echo "✅ Feature flags updated! Run 'make diff' to see changes."; \
-	else \
-		echo "Cancelled."; \
-	fi
-
-# Safely set flags that don't change templates
-flags-safe: build
-	@echo "🚩 Setting safe CDK feature flags (no template changes)..."
-	cdk flags --safe --unstable=flags
-	@echo "✅ Safe flags updated!"
-
+# Show outputs
+outputs:
+ifndef ENV
+	@echo "❌ Error: ENV not specified. Usage: make outputs ENV=dev"
+	@exit 1
+endif
+	@echo "📤 Stack Outputs for $(ENV):"
+	@aws cloudformation describe-stacks \
+		--stack-name github-runner-$(ENV) \
+		--query "Stacks[0].Outputs" \
+		--output table \
+		--region us-east-1 2>/dev/null || echo "Stack not deployed"

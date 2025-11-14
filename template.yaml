@@ -1,0 +1,413 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  GitHub Actions Lambda Runner
+  
+  Serverless self-hosted GitHub Actions runner with AWS CLI and SAM CLI pre-installed.
+  Runs GitHub workflow jobs on-demand with automatic scaling.
+
+# Global configuration
+Globals:
+  Function:
+    Timeout: 900  # 15 minutes max for runner
+    MemorySize: 256
+    Runtime: python3.13
+    Architectures:
+      - x86_64
+    Environment:
+      Variables:
+        LOG_LEVEL: INFO
+        POWERTOOLS_SERVICE_NAME: github-runner
+        POWERTOOLS_METRICS_NAMESPACE: GitHubRunner
+    Tags:
+      Project: github-runner
+      ManagedBy: SAM
+      Environment: !Ref Environment
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - sandbox
+      - dev
+      - prod
+    Description: Deployment environment
+  
+  GitHubToken:
+    Type: String
+    NoEcho: true
+    Default: REPLACE_ME
+    Description: GitHub Personal Access Token (will be stored in Secrets Manager)
+  
+  CostCenter:
+    Type: String
+    Default: Engineering
+    Description: Cost center tag for resource tracking
+  
+  Owner:
+    Type: String
+    Default: DevOps
+    Description: Owner tag for resource management
+
+Resources:
+  # ============================================
+  # Secrets Manager - GitHub Token
+  # ============================================
+  GitHubTokenSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub github-runner/token-${Environment}
+      Description: GitHub Personal Access Token for runner registration
+      SecretString: !Ref GitHubToken
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: CostCenter
+          Value: !Ref CostCenter
+        - Key: Owner
+          Value: !Ref Owner
+
+  WebhookSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub github-runner/webhook-secret-${Environment}
+      Description: GitHub webhook secret for signature verification
+      GenerateSecretString:
+        ExcludePunctuation: true
+        PasswordLength: 32
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: CostCenter
+          Value: !Ref CostCenter
+        - Key: Owner
+          Value: !Ref Owner
+
+  # ============================================
+  # ECR Repository for Runner Docker Image
+  # ============================================
+  RunnerECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub github-runner-executor-${Environment}
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [{
+              "rulePriority": 1,
+              "description": "Keep last 5 images",
+              "selection": {
+                "tagStatus": "any",
+                "countType": "imageCountMoreThan",
+                "countNumber": 5
+              },
+              "action": { "type": "expire" }
+            }]
+          }
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: CostCenter
+          Value: !Ref CostCenter
+
+  # ============================================
+  # CloudWatch Log Groups
+  # ============================================
+  WebhookLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/github-runner-webhook-${Environment}
+      RetentionInDays: 7
+
+  RunnerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/github-runner-executor-${Environment}
+      RetentionInDays: 7
+
+  # ============================================
+  # Lambda Function - Webhook Receiver
+  # ============================================
+  WebhookFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub github-runner-webhook-${Environment}
+      CodeUri: lambda/webhook/
+      Handler: index.handler
+      Description: Receives and validates GitHub webhook events
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          GITHUB_WEBHOOK_SECRET_ARN: !Ref WebhookSecret
+          RUNNER_FUNCTION_NAME: !Ref RunnerFunction
+          ENVIRONMENT: !Ref Environment
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Ref WebhookSecret
+            - Effect: Allow
+              Action:
+                - lambda:InvokeFunction
+              Resource: !GetAtt RunnerFunction.Arn
+      Events:
+        WebhookApi:
+          Type: Api
+          Properties:
+            Path: /
+            Method: post
+            RestApiId: !Ref WebhookApi
+
+  # Webhook Function Alarms
+  WebhookErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub github-runner-webhook-errors-${Environment}
+      AlarmDescription: Alert when webhook function has errors
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref WebhookFunction
+      TreatMissingData: notBreaching
+
+  # ============================================
+  # Lambda Function - Runner Executor
+  # ============================================
+  RunnerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub github-runner-executor-${Environment}
+      PackageType: Image
+      ImageUri: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${RunnerECRRepository}:latest
+      Description: Executes GitHub Actions workflows as ephemeral runner
+      Timeout: 900  # 15 minutes (maximum Lambda timeout)
+      MemorySize: 3008  # High memory for faster execution
+      EphemeralStorage:
+        Size: 10240  # 10GB (maximum ephemeral storage)
+      Environment:
+        Variables:
+          GITHUB_TOKEN_SECRET_NAME: !Ref GitHubTokenSecret
+          ENVIRONMENT: !Ref Environment
+      Policies:
+        - Statement:
+            # Secrets Manager access
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Ref GitHubTokenSecret
+            
+            # CloudFormation permissions for SAM/CDK deploy
+            - Effect: Allow
+              Action:
+                - cloudformation:CreateStack
+                - cloudformation:UpdateStack
+                - cloudformation:DeleteStack
+                - cloudformation:DescribeStacks
+                - cloudformation:DescribeStackEvents
+                - cloudformation:DescribeStackResource
+                - cloudformation:DescribeStackResources
+                - cloudformation:GetTemplate
+                - cloudformation:ValidateTemplate
+                - cloudformation:CreateChangeSet
+                - cloudformation:DescribeChangeSet
+                - cloudformation:ExecuteChangeSet
+                - cloudformation:DeleteChangeSet
+                - cloudformation:ListStackResources
+              Resource: '*'
+            
+            # S3 permissions for SAM artifacts
+            - Effect: Allow
+              Action:
+                - s3:CreateBucket
+                - s3:PutObject
+                - s3:GetObject
+                - s3:DeleteObject
+                - s3:ListBucket
+                - s3:GetBucketLocation
+                - s3:GetBucketVersioning
+              Resource: '*'
+            
+            # Lambda permissions for SAM deploy
+            - Effect: Allow
+              Action:
+                - lambda:CreateFunction
+                - lambda:DeleteFunction
+                - lambda:GetFunction
+                - lambda:GetFunctionConfiguration
+                - lambda:UpdateFunctionCode
+                - lambda:UpdateFunctionConfiguration
+                - lambda:ListFunctions
+                - lambda:PublishVersion
+                - lambda:CreateAlias
+                - lambda:DeleteAlias
+                - lambda:GetAlias
+                - lambda:UpdateAlias
+                - lambda:AddPermission
+                - lambda:RemovePermission
+                - lambda:InvokeFunction
+              Resource: '*'
+            
+            # IAM permissions for execution roles
+            - Effect: Allow
+              Action:
+                - iam:CreateRole
+                - iam:DeleteRole
+                - iam:GetRole
+                - iam:PassRole
+                - iam:AttachRolePolicy
+                - iam:DetachRolePolicy
+                - iam:PutRolePolicy
+                - iam:DeleteRolePolicy
+                - iam:GetRolePolicy
+                - iam:TagRole
+              Resource: '*'
+            
+            # API Gateway permissions
+            - Effect: Allow
+              Action:
+                - apigateway:*
+              Resource: '*'
+            
+            # CloudWatch Logs
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+                - logs:DescribeLogGroups
+                - logs:DescribeLogStreams
+              Resource: '*'
+            
+            # ECR permissions for Docker images
+            - Effect: Allow
+              Action:
+                - ecr:GetAuthorizationToken
+                - ecr:BatchCheckLayerAvailability
+                - ecr:GetDownloadUrlForLayer
+                - ecr:BatchGetImage
+                - ecr:PutImage
+                - ecr:InitiateLayerUpload
+                - ecr:UploadLayerPart
+                - ecr:CompleteLayerUpload
+                - ecr:CreateRepository
+                - ecr:DescribeRepositories
+              Resource: '*'
+            
+            # DynamoDB permissions (commonly used)
+            - Effect: Allow
+              Action:
+                - dynamodb:*
+              Resource: '*'
+            
+            # SQS permissions (commonly used)
+            - Effect: Allow
+              Action:
+                - sqs:*
+              Resource: '*'
+            
+            # SNS permissions (commonly used)
+            - Effect: Allow
+              Action:
+                - sns:*
+              Resource: '*'
+
+  # Runner Function Alarms
+  RunnerErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub github-runner-executor-errors-${Environment}
+      AlarmDescription: Alert when runner function has errors
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref RunnerFunction
+      TreatMissingData: notBreaching
+
+  RunnerThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub github-runner-executor-throttles-${Environment}
+      AlarmDescription: Alert when runner function is throttled
+      MetricName: Throttles
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref RunnerFunction
+      TreatMissingData: notBreaching
+
+  # ============================================
+  # API Gateway
+  # ============================================
+  WebhookApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub github-runner-webhook-${Environment}
+      StageName: prod
+      Description: API Gateway for receiving GitHub webhook events
+      TracingEnabled: true
+      AccessLogSetting:
+        DestinationArn: !GetAtt ApiAccessLogGroup.Arn
+        Format: '$context.requestId $context.error.message $context.error.messageString'
+      Tags:
+        Environment: !Ref Environment
+        CostCenter: !Ref CostCenter
+
+  ApiAccessLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/apigateway/github-runner-${Environment}
+      RetentionInDays: 7
+
+Outputs:
+  WebhookUrl:
+    Description: GitHub webhook URL - configure this in your repository settings
+    Value: !Sub https://${WebhookApi}.execute-api.${AWS::Region}.amazonaws.com/prod/
+    Export:
+      Name: !Sub github-runner-webhook-url-${Environment}
+  
+  WebhookSecretArn:
+    Description: ARN of the webhook secret - retrieve value to configure in GitHub
+    Value: !Ref WebhookSecret
+    Export:
+      Name: !Sub github-runner-webhook-secret-${Environment}
+  
+  GitHubTokenSecretArn:
+    Description: ARN of the GitHub token secret - update this with your PAT
+    Value: !Ref GitHubTokenSecret
+    Export:
+      Name: !Sub github-runner-token-secret-${Environment}
+  
+  RunnerFunctionArn:
+    Description: ARN of the runner Lambda function
+    Value: !GetAtt RunnerFunction.Arn
+    Export:
+      Name: !Sub github-runner-function-${Environment}
+  
+  ECRRepositoryUri:
+    Description: ECR repository URI for runner Docker image
+    Value: !GetAtt RunnerECRRepository.RepositoryUri
+    Export:
+      Name: !Sub github-runner-ecr-${Environment}
+
