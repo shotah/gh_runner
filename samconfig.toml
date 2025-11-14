@@ -42,7 +42,9 @@ capabilities = "CAPABILITY_IAM"
 parameter_overrides = [
     "Environment=sandbox",
     "CostCenter=Engineering",
-    "Owner=DevOps"
+    "Owner=DevOps",
+    "ApiThrottleRateLimit=5",      # Low rate for webhook events
+    "ApiThrottleBurstLimit=10"
 ]
 tags = "Environment=sandbox Project=github-runner ManagedBy=SAM"
 
@@ -59,7 +61,9 @@ capabilities = "CAPABILITY_IAM"
 parameter_overrides = [
     "Environment=dev",
     "CostCenter=Engineering",
-    "Owner=DevOps"
+    "Owner=DevOps",
+    "ApiThrottleRateLimit=5",      # Low rate for webhook events
+    "ApiThrottleBurstLimit=10"
 ]
 tags = "Environment=dev Project=github-runner ManagedBy=SAM"
 
@@ -76,6 +80,8 @@ capabilities = "CAPABILITY_IAM"
 parameter_overrides = [
     "Environment=prod",
     "CostCenter=Platform",
-    "Owner=Platform-Team"
+    "Owner=Platform-Team",
+    "ApiThrottleRateLimit=10",     # Conservative rate for webhook events
+    "ApiThrottleBurstLimit=20"
 ]
 tags = "Environment=prod Project=github-runner ManagedBy=SAM"

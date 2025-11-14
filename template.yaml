@@ -1,4 +1,4 @@
-AWSTemplateFormatVersion: '2010-09-09'
+AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
 Description: >
   GitHub Actions Lambda Runner
@@ -7,11 +7,12 @@ Description: >
   Runs GitHub workflow jobs on-demand with automatic scaling.
 
 # Global configuration
+# Note: Runtime is NOT included here because RunnerFunction uses Docker images
+# and cannot have Runtime specified (PackageType: Image)
 Globals:
   Function:
-    Timeout: 900  # 15 minutes max for runner
+    Timeout: 900 # 15 minutes max for runner
     MemorySize: 256
-    Runtime: python3.13
     Architectures:
       - x86_64
     Environment:
@@ -49,6 +50,17 @@ Parameters:
     Type: String
     Default: DevOps
     Description: Owner tag for resource management
+
+  # API Gateway Throttling (environment-specific)
+  ApiThrottleRateLimit:
+    Type: Number
+    Default: 10
+    Description: API Gateway steady-state request rate limit (requests per second)
+
+  ApiThrottleBurstLimit:
+    Type: Number
+    Default: 20
+    Description: API Gateway burst request limit
 
 Resources:
   # ============================================
@@ -137,6 +149,7 @@ Resources:
       FunctionName: !Sub github-runner-webhook-${Environment}
       CodeUri: lambda/webhook/
       Handler: index.handler
+      Runtime: python3.13
       Description: Receives and validates GitHub webhook events
       Timeout: 30
       MemorySize: 256
@@ -191,16 +204,41 @@ Resources:
       PackageType: Image
       ImageUri: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${RunnerECRRepository}:latest
       Description: Executes GitHub Actions workflows as ephemeral runner
-      Timeout: 900  # 15 minutes (maximum Lambda timeout)
-      MemorySize: 3008  # High memory for faster execution
+      Timeout: 900 # 15 minutes (maximum Lambda timeout)
+      MemorySize: 3008 # High memory for faster execution
       EphemeralStorage:
-        Size: 10240  # 10GB (maximum ephemeral storage)
+        Size: 10240 # 10GB (maximum ephemeral storage)
       Environment:
         Variables:
           GITHUB_TOKEN_SECRET_NAME: !Ref GitHubTokenSecret
           ENVIRONMENT: !Ref Environment
       Policies:
         - Statement:
+            # ⚠️ SECURITY WARNING ⚠️
+            # The permissions below are VERY BROAD and grant near-admin access to many AWS services.
+            # This is intentional for a general-purpose deployment runner, but poses security risks:
+            #   - Any code in your GitHub workflows runs with these permissions
+            #   - A compromised workflow could delete resources, exfiltrate data, or rack up costs
+            #
+            # RECOMMENDED ACTIONS (see docs/SECURITY.md):
+            #   1. Scope down to only the services/actions you actually use
+            #   2. Add resource-level restrictions (e.g., specific S3 buckets, CloudFormation stacks)
+            #   3. Use IAM conditions to restrict by tags (e.g., ManagedBy: github-runner)
+            #   4. Deploy separate runners per environment with environment-specific permissions
+            #   5. Enable branch protection and require PR reviews for workflow changes
+            #   6. Monitor CloudWatch Logs and CloudTrail for suspicious activity
+            #
+            # Example of scoping down (uncomment and customize):
+            # - Effect: Allow
+            #   Action:
+            #     - cloudformation:CreateStack
+            #     - cloudformation:UpdateStack
+            #   Resource:
+            #     - !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/my-app-*/*"
+            #   Condition:
+            #     StringEquals:
+            #       aws:ResourceTag/ManagedBy: github-runner
+
             # Secrets Manager access
             - Effect: Allow
               Action:
@@ -224,7 +262,7 @@ Resources:
                 - cloudformation:ExecuteChangeSet
                 - cloudformation:DeleteChangeSet
                 - cloudformation:ListStackResources
-              Resource: '*'
+              Resource: "*"
 
             # S3 permissions for SAM artifacts
             - Effect: Allow
@@ -236,7 +274,7 @@ Resources:
                 - s3:ListBucket
                 - s3:GetBucketLocation
                 - s3:GetBucketVersioning
-              Resource: '*'
+              Resource: "*"
 
             # Lambda permissions for SAM deploy
             - Effect: Allow
@@ -256,7 +294,7 @@ Resources:
                 - lambda:AddPermission
                 - lambda:RemovePermission
                 - lambda:InvokeFunction
-              Resource: '*'
+              Resource: "*"
 
             # IAM permissions for execution roles
             - Effect: Allow
@@ -271,13 +309,13 @@ Resources:
                 - iam:DeleteRolePolicy
                 - iam:GetRolePolicy
                 - iam:TagRole
-              Resource: '*'
+              Resource: "*"
 
             # API Gateway permissions
             - Effect: Allow
               Action:
                 - apigateway:*
-              Resource: '*'
+              Resource: "*"
 
             # CloudWatch Logs
             - Effect: Allow
@@ -287,7 +325,7 @@ Resources:
                 - logs:PutLogEvents
                 - logs:DescribeLogGroups
                 - logs:DescribeLogStreams
-              Resource: '*'
+              Resource: "*"
 
             # ECR permissions for Docker images
             - Effect: Allow
@@ -302,25 +340,25 @@ Resources:
                 - ecr:CompleteLayerUpload
                 - ecr:CreateRepository
                 - ecr:DescribeRepositories
-              Resource: '*'
+              Resource: "*"
 
             # DynamoDB permissions (commonly used)
             - Effect: Allow
               Action:
                 - dynamodb:*
-              Resource: '*'
+              Resource: "*"
 
             # SQS permissions (commonly used)
             - Effect: Allow
               Action:
                 - sqs:*
-              Resource: '*'
+              Resource: "*"
 
             # SNS permissions (commonly used)
             - Effect: Allow
               Action:
                 - sns:*
-              Resource: '*'
+              Resource: "*"
 
   # Runner Function Alarms
   RunnerErrorAlarm:
@@ -357,22 +395,106 @@ Resources:
           Value: !Ref RunnerFunction
       TreatMissingData: notBreaching
 
-  # ============================================
-  # API Gateway
-  # ============================================
+  RunnerHighConcurrencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub github-runner-executor-high-concurrency-${Environment}
+      AlarmDescription: Alert when runner function has high concurrent executions (possible abuse)
+      MetricName: ConcurrentExecutions
+      Namespace: AWS/Lambda
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 8
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref RunnerFunction
+      TreatMissingData: notBreaching
+
+  RunnerLongDurationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub github-runner-executor-long-duration-${Environment}
+      AlarmDescription: Alert when runner function is approaching timeout (840+ seconds)
+      MetricName: Duration
+      Namespace: AWS/Lambda
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 840000 # 840 seconds in milliseconds (14 minutes)
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref RunnerFunction
+      TreatMissingData: notBreaching
+
+  # API Gateway throttling alarm
+  ApiThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub github-runner-api-throttle-${Environment}
+      AlarmDescription: Alert when API Gateway is throttling requests (possible attack)
+      MetricName: Count
+      Namespace: AWS/ApiGateway
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ApiName
+          Value: !Sub github-runner-webhook-${Environment}
+      TreatMissingData: notBreaching
+
+  # ============================================================================
+  # API Gateway (Explicit Definition for Environment-Specific Stages)
+  # ============================================================================
   WebhookApi:
     Type: AWS::Serverless::Api
     Properties:
       Name: !Sub github-runner-webhook-${Environment}
-      StageName: prod
+      StageName: !Ref Environment # Environment-specific stage (sandbox/dev/prod)
       Description: API Gateway for receiving GitHub webhook events
       TracingEnabled: true
+
+      # Enhanced access logging with detailed request information
       AccessLogSetting:
         DestinationArn: !GetAtt ApiAccessLogGroup.Arn
-        Format: '$context.requestId $context.error.message $context.error.messageString'
+        Format: >
+          {"requestId":"$context.requestId",
+          "ip":"$context.identity.sourceIp",
+          "requestTime":"$context.requestTime",
+          "httpMethod":"$context.httpMethod",
+          "resourcePath":"$context.resourcePath",
+          "status":"$context.status",
+          "protocol":"$context.protocol",
+          "responseLength":"$context.responseLength",
+          "errorMessage":"$context.error.message",
+          "errorType":"$context.error.messageString"}
+
+      # Method settings for throttling, logging, and metrics
+      MethodSettings:
+        - ResourcePath: "/*"
+          HttpMethod: "*"
+          ThrottlingRateLimit: !Ref ApiThrottleRateLimit
+          ThrottlingBurstLimit: !Ref ApiThrottleBurstLimit
+          LoggingLevel: INFO
+          DataTraceEnabled: true
+          MetricsEnabled: true
+
+      # CORS configuration (GitHub webhooks don't need CORS, but included for completeness)
+      # Cors:
+      #   AllowMethods: "'POST,OPTIONS'"
+      #   AllowHeaders: "'Content-Type,X-Hub-Signature-256,X-GitHub-Event'"
+      #   AllowOrigin: "'https://github.com'"
+
       Tags:
         Environment: !Ref Environment
         CostCenter: !Ref CostCenter
+        Owner: !Ref Owner
+        Project: github-runner
+        ManagedBy: SAM
 
   ApiAccessLogGroup:
     Type: AWS::Logs::LogGroup
@@ -383,7 +505,7 @@ Resources:
 Outputs:
   WebhookUrl:
     Description: GitHub webhook URL - configure this in your repository settings
-    Value: !Sub https://${WebhookApi}.execute-api.${AWS::Region}.amazonaws.com/prod/
+    Value: !Sub https://${WebhookApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}/
     Export:
       Name: !Sub github-runner-webhook-url-${Environment}
 
@@ -410,3 +532,15 @@ Outputs:
     Value: !GetAtt RunnerECRRepository.RepositoryUri
     Export:
       Name: !Sub github-runner-ecr-${Environment}
+
+  ApiGatewayId:
+    Description: API Gateway ID
+    Value: !Ref WebhookApi
+    Export:
+      Name: !Sub github-runner-api-id-${Environment}
+
+  ApiStageName:
+    Description: API Gateway stage name (matches environment)
+    Value: !Ref Environment
+    Export:
+      Name: !Sub github-runner-api-stage-${Environment}

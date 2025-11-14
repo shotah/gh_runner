@@ -6,13 +6,9 @@ AWS Lambda-based self-hosted GitHub Actions runner with AWS CLI and SAM CLI pre-
 
 ## 📚 Documentation
 
-- **[Setup Guide](docs/SETUP.md)** - Complete step-by-step setup instructions
-- **[SAM Migration Guide](SAM_MIGRATION.md)** - Why we chose SAM and migration details
-- **[Architecture](docs/ARCHITECTURE.md)** - System design and component details
+- **[Architecture](docs/ARCHITECTURE.md)** - System design, components, and data flow
 - **[Security](docs/SECURITY.md)** - Security considerations and hardening guide
-- **[Secrets Management](docs/SECRETS_MANAGEMENT.md)** - How to manage GitHub tokens and secrets
-- **[Tagging Strategy](docs/TAGGING_STRATEGY.md)** - Cost tracking and resource organization
-- **[Contributing](docs/CONTRIBUTING.md)** - Development and contribution guidelines
+- **[Development](docs/DEVELOPMENT.md)** - Local development, testing, and contribution guide
 
 ## Architecture
 
@@ -37,10 +33,11 @@ GitHub Webhook → API Gateway → Webhook Lambda → Runner Lambda (with AWS CL
 ✅ **Serverless and on-demand** - Pay only for execution time
 ✅ **Auto-scaling** - Up to 10 concurrent runners
 ✅ **Pre-installed tools:**
-  - AWS CLI v2 (latest)
-  - AWS SAM CLI (latest)
-  - Python 3.13
-  - Git, tar, gzip, jq, and common utilities
+
+- AWS CLI v2 (latest)
+- AWS SAM CLI (latest)
+- Python 3.13
+- Git, tar, gzip, jq, and common utilities
 ✅ **Ephemeral runners** - Auto-cleanup after each job
 ✅ **Security** - Webhook signature verification
 ✅ **AWS-ready** - Comprehensive IAM permissions for deployments
@@ -56,8 +53,6 @@ GitHub Webhook → API Gateway → Webhook Lambda → Runner Lambda (with AWS CL
 **No Node.js or TypeScript required!** ✅
 
 ## Quick Start
-
-> 💡 **New to this project?** Start with **[docs/SETUP.md](docs/SETUP.md)** for complete setup instructions!
 
 ### Using Make (Recommended)
 
@@ -112,6 +107,7 @@ sam deploy --guided --config-env dev
 ```
 
 Or use environment-specific commands:
+
 ```bash
 sam deploy --config-env sandbox  # Sandbox environment
 sam deploy --config-env dev      # Development environment
@@ -119,6 +115,7 @@ sam deploy --config-env prod     # Production environment
 ```
 
 Note the outputs:
+
 - `WebhookUrl`: Your API Gateway endpoint
 - `GitHubTokenSecretArn`: Secret to update with your GitHub token
 - `WebhookSecretArn`: Secret for webhook validation
@@ -133,6 +130,7 @@ aws secretsmanager put-secret-value \
 ```
 
 Or use the helper:
+
 ```bash
 make setup-token ENV=dev
 ```
@@ -150,11 +148,10 @@ make docker-push ENV=dev
 </details>
 
 **GitHub Token Permissions Required:**
+
 - `repo` (full control)
 - `workflow`
 - `admin:org` → `read:org` (for organization runners)
-
-> 💡 See **[docs/SECRETS_MANAGEMENT.md](docs/SECRETS_MANAGEMENT.md)** for different ways to provide your GitHub token!
 
 ### 5. Get Webhook Secret
 
@@ -181,6 +178,7 @@ aws secretsmanager get-secret-value \
 ### 7. Update Your GitHub Actions Workflow
 
 Add labels to specify the Lambda runner. Available labels:
+
 - `self-hosted` - Basic self-hosted runner
 - `lambda-runner` - Identifies this as the Lambda-based runner
 - `aws-cli` - Indicates AWS CLI is available
@@ -255,14 +253,13 @@ parameter_overrides = [
 ```
 
 Or via `.env` file (automatically loaded by Makefile):
+
 ```bash
 ENVIRONMENT=production
 COST_CENTER=Platform
 OWNER=devops-team
 make deploy-prod
 ```
-
-See **[docs/TAGGING_STRATEGY.md](docs/TAGGING_STRATEGY.md)** for details on cost tracking and tag management.
 
 ## Limitations
 
@@ -271,6 +268,7 @@ See **[docs/TAGGING_STRATEGY.md](docs/TAGGING_STRATEGY.md)** for details on cost
 - **Workflow jobs only** (not full self-hosted runner features)
 
 For longer workflows, consider:
+
 1. Breaking jobs into smaller steps
 2. Using CodeBuild or Fargate instead (can be triggered via similar webhook pattern)
 
@@ -307,6 +305,7 @@ For longer workflows, consider:
 ⚠️ **IMPORTANT:** Review **[docs/SECURITY.md](docs/SECURITY.md)** for comprehensive security guidance.
 
 **Critical Actions:**
+
 1. **Scope down IAM permissions** - The default is VERY permissive (admin-level for many services)
 2. **Rotate GitHub tokens regularly** - Set up a 90-day rotation schedule
 3. **Use GitHub Apps instead of PATs** - More secure with automatic token rotation
@@ -315,6 +314,7 @@ For longer workflows, consider:
 6. **Monitor CloudWatch Logs** - Watch for suspicious activity
 
 **Already Implemented:**
+
 - ✅ Webhook signature verification (HMAC-SHA256)
 - ✅ Secrets encrypted in AWS Secrets Manager
 - ✅ Ephemeral runners (auto-cleanup)
@@ -335,69 +335,64 @@ For production use, GitHub Apps provide better security than Personal Access Tok
 
 ## Development
 
-### Local Testing
+For local development, testing, and contribution guidelines, see **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)**.
 
-Test webhook Lambda locally:
-
-```bash
-cd lambda/webhook
-python -m pytest
-```
-
-### Updating Runner
-
-To update the runner version:
+### Quick Development Commands
 
 ```bash
-# Edit lib/github-runner-stack.ts
-RUNNER_VERSION: '2.312.0'
+# Setup
+make install-dev       # Install dependencies
+make hooks             # Install pre-commit hooks
 
-# Rebuild and deploy
-npm run build
-cdk deploy
+# Development
+make lint              # Run all quality checks
+make test              # Run tests with coverage
+make build             # Build SAM application
+
+# Deployment
+make deploy-dev        # Deploy to dev
+make logs ENV=dev      # View logs
+make destroy-dev       # Remove dev stack
 ```
 
-### Logs
-
-View logs interactively:
-```bash
-make logs
-```
-
-Or view specific logs:
-```bash
-# Webhook logs
-make logs-webhook
-
-# Runner logs
-make logs-runner
-```
+Run `make help` for a complete list of available commands.
 
 ## Cleanup
 
 Remove all resources:
 
 ```bash
-make destroy
+# Remove dev environment
+make destroy-dev
+
+# Remove prod environment (requires confirmation)
+make destroy-prod
 ```
 
 Or manually:
+
 ```bash
-cdk destroy
+sam delete --config-env dev
 ```
 
-Note: This will delete all Lambda functions, API Gateway, and associated resources but will retain Secrets Manager secrets by default.
+Note: This will delete all Lambda functions, API Gateway, ECR repository, and associated resources but will retain Secrets Manager secrets by default (for recovery).
 
 ## Contributing
 
-Issues and pull requests welcome! See **[docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)** for development guidelines.
+Contributions welcome! See **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)** for:
+
+- Development workflow
+- Code quality standards
+- Testing requirements
+- Pull request guidelines
 
 ## Additional Resources
 
-- **[Example Workflows](examples/)** - Sample GitHub Actions workflows
-- **[Architecture Details](docs/ARCHITECTURE.md)** - Deep dive into system design
-- **[Security Hardening](docs/SECURITY.md)** - Production security checklist
-- **[Cost Optimization](docs/TAGGING_STRATEGY.md)** - Track and optimize AWS costs
+- **[Architecture](docs/ARCHITECTURE.md)** - Deep dive into system design, components, and data flow
+- **[Security](docs/SECURITY.md)** - Production security checklist and hardening steps
+- **[Development](docs/DEVELOPMENT.md)** - Local development, testing, and debugging guide
+- [AWS SAM CLI Documentation](https://docs.aws.amazon.com/serverless-application-model/)
+- [GitHub Actions Self-Hosted Runners](https://docs.github.com/en/actions/hosting-your-own-runners)
 
 ## License
 

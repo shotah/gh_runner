@@ -11,12 +11,14 @@ This document outlines the security measures implemented and additional recommen
 **Protection:** HMAC-SHA256 signature verification
 
 The webhook endpoint verifies every incoming request using GitHub's webhook secret:
+
 - GitHub signs each webhook with a shared secret
 - Lambda verifies the signature before processing
 - Invalid signatures are rejected with 401 Unauthorized
 - Uses constant-time comparison to prevent timing attacks
 
 **Configuration:**
+
 ```bash
 # Secret is auto-generated during deployment
 aws secretsmanager get-secret-value --secret-id github-runner/webhook-secret
@@ -35,6 +37,7 @@ aws secretsmanager get-secret-value --secret-id github-runner/webhook-secret
 ### ✅ 3. Least Privilege (Partial)
 
 **Current State:**
+
 - Webhook Lambda: Minimal permissions (read secrets, invoke runner)
 - Runner Lambda: **BROAD PERMISSIONS** ⚠️ (see concerns below)
 
@@ -63,6 +66,7 @@ aws secretsmanager get-secret-value --secret-id github-runner/webhook-secret
 **Risk:** The runner Lambda has near-admin permissions for many AWS services.
 
 **Current Permissions Include:**
+
 - CloudFormation (full)
 - Lambda (full)
 - S3 (full)
@@ -72,6 +76,7 @@ aws secretsmanager get-secret-value --secret-id github-runner/webhook-secret
 
 **Why This Matters:**
 Any code in your GitHub workflows runs with these permissions. A compromised workflow or malicious commit could:
+
 - Delete production resources
 - Exfiltrate data
 - Create backdoors
@@ -80,50 +85,59 @@ Any code in your GitHub workflows runs with these permissions. A compromised wor
 **Mitigations:**
 
 1. **Scope Down Permissions** (RECOMMENDED):
-```typescript
-// Edit lib/github-runner-stack.ts
-runnerFunction.addToRolePolicy(new iam.PolicyStatement({
-  effect: iam.Effect.ALLOW,
-  actions: [
-    // Only include what you actually need
-    'cloudformation:CreateStack',
-    'cloudformation:UpdateStack',
-    'cloudformation:DescribeStacks',
-    's3:PutObject',
-    's3:GetObject',
-    // etc.
-  ],
-  resources: [
-    // Lock down to specific resources
-    'arn:aws:cloudformation:*:*:stack/my-app-*/*',
-    'arn:aws:s3:::my-deployment-bucket/*',
-  ],
-}));
+
+```yaml
+# Edit template.yaml - RunnerFunction IAM policies
+RunnerExecutionRole:
+  Type: AWS::IAM::Role
+  Properties:
+    Policies:
+      - PolicyName: ScopedDeploymentPolicy
+        PolicyDocument:
+          Statement:
+            - Effect: Allow
+              Action:
+                # Only include what you actually need
+                - cloudformation:CreateStack
+                - cloudformation:UpdateStack
+                - cloudformation:DescribeStacks
+                - s3:PutObject
+                - s3:GetObject
+              Resource:
+                # Lock down to specific resources
+                - arn:aws:cloudformation:*:*:stack/my-app-*/*
+                - arn:aws:s3:::my-deployment-bucket/*
 ```
 
 2. **Use Resource Tags and Conditions**:
-```typescript
-runnerFunction.addToRolePolicy(new iam.PolicyStatement({
-  effect: iam.Effect.ALLOW,
-  actions: ['cloudformation:*'],
-  resources: ['*'],
-  conditions: {
-    'StringEquals': {
-      'aws:ResourceTag/ManagedBy': 'github-runner'
-    }
-  }
-}));
+
+```yaml
+# Add conditions to IAM policies
+- Effect: Allow
+  Action: cloudformation:*
+  Resource: "*"
+  Condition:
+    StringEquals:
+      aws:ResourceTag/ManagedBy: github-runner
 ```
 
 3. **Separate Runners by Environment**:
-- Different runners for dev/staging/prod
+
+- Deploy separate stacks for dev/staging/prod
 - Each with environment-specific permissions
+- Use `samconfig.toml` environments
+
+```bash
+sam deploy --config-env dev     # Limited dev permissions
+sam deploy --config-env prod    # Production permissions
+```
 
 ### ⚠️ 2. Code Execution Risk
 
 **Risk:** Anyone who can push to your repository can execute arbitrary code with your AWS permissions.
 
 **Attack Scenarios:**
+
 - Compromised developer account
 - Malicious pull request (if you allow PR workflows)
 - Supply chain attacks via dependencies
@@ -136,6 +150,7 @@ runnerFunction.addToRolePolicy(new iam.PolicyStatement({
    - Restrict who can push to main
 
 2. **Repository Settings**:
+
    ```
    Settings → Actions → General
    ✅ Disable "Fork pull request workflows"
@@ -143,6 +158,7 @@ runnerFunction.addToRolePolicy(new iam.PolicyStatement({
    ```
 
 3. **Workflow Restrictions**:
+
    ```yaml
    # Only run on specific branches
    on:
@@ -165,6 +181,7 @@ runnerFunction.addToRolePolicy(new iam.PolicyStatement({
 **Risk:** Runner has full internet access and can reach AWS services.
 
 **Current State:**
+
 - Runner Lambda runs in AWS-managed network
 - Can access any public endpoint
 - Can access AWS APIs
@@ -172,75 +189,83 @@ runnerFunction.addToRolePolicy(new iam.PolicyStatement({
 **Mitigations:**
 
 1. **VPC Deployment** (Advanced):
-```typescript
-// Add to lib/github-runner-stack.ts
-const vpc = new ec2.Vpc(this, 'RunnerVpc', {
-  maxAzs: 2,
-  natGateways: 1,
-});
 
-const runnerFunction = new lambda.DockerImageFunction(this, 'RunnerFunction', {
-  // ... existing config ...
-  vpc: vpc,
-  vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
-  securityGroups: [securityGroup],
-});
+```yaml
+# Add to template.yaml - RunnerFunction
+RunnerFunction:
+  Type: AWS::Serverless::Function
+  Properties:
+    # ... existing config ...
+    VpcConfig:
+      SecurityGroupIds:
+        - !Ref RunnerSecurityGroup
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
 ```
 
 2. **VPC Endpoints** (reduce internet exposure):
-   - S3 VPC endpoint
+   - S3 VPC endpoint (no NAT Gateway needed)
    - Secrets Manager VPC endpoint
    - CloudFormation VPC endpoint
+   - ECR VPC endpoints (for Docker image pulls)
 
 ### ⚠️ 4. Public Webhook Endpoint
 
 **Risk:** The API Gateway endpoint is publicly accessible.
 
 **Current Protections:**
+
 - ✅ HMAC signature verification
 - ✅ Only processes valid GitHub events
 
 **Additional Mitigations:**
 
 1. **Rate Limiting**:
-```typescript
-const api = new apigateway.RestApi(this, 'WebhookApi', {
-  // ... existing config ...
-  deployOptions: {
-    throttle: {
-      rateLimit: 10,
-      burstLimit: 20,
-    }
-  }
-});
+
+```yaml
+# Add to template.yaml - API Gateway
+WebhookApi:
+  Type: AWS::Serverless::Api
+  Properties:
+    MethodSettings:
+      - ResourcePath: "/*"
+        HttpMethod: "*"
+        ThrottlingRateLimit: 10
+        ThrottlingBurstLimit: 20
 ```
 
 2. **AWS WAF** (Advanced):
-```typescript
-const webAcl = new wafv2.CfnWebACL(this, 'WebhookWAF', {
-  scope: 'REGIONAL',
-  defaultAction: { allow: {} },
-  rules: [
-    {
-      name: 'RateLimitRule',
-      priority: 1,
-      action: { block: {} },
-      statement: {
-        rateBasedStatement: {
-          limit: 100,
-          aggregateKeyType: 'IP',
-        },
-      },
-      visibilityConfig: { /* ... */ },
-    },
-  ],
-});
+
+```yaml
+# Create WAF WebACL for API Gateway
+WebhookWAF:
+  Type: AWS::WAFv2::WebACL
+  Properties:
+    Scope: REGIONAL
+    DefaultAction:
+      Allow: {}
+    Rules:
+      - Name: RateLimitRule
+        Priority: 1
+        Action:
+          Block: {}
+        Statement:
+          RateBasedStatement:
+            Limit: 100
+            AggregateKeyType: IP
+        VisibilityConfig:
+          SampledRequestsEnabled: true
+          CloudWatchMetricsEnabled: true
+          MetricName: RateLimitRule
 ```
 
 3. **IP Allowlist** (if using GitHub Enterprise):
-```typescript
-// Restrict to GitHub's webhook IPs
-// https://api.github.com/meta
+
+```bash
+# Get GitHub webhook IPs
+curl https://api.github.com/meta | jq .hooks
+# Add to WAF IP set
 ```
 
 ### ⚠️ 5. Secrets Rotation
@@ -248,6 +273,7 @@ const webAcl = new wafv2.CfnWebACL(this, 'WebhookWAF', {
 **Risk:** GitHub tokens don't automatically rotate.
 
 **Current State:**
+
 - Manual rotation required
 - PATs can be long-lived
 
@@ -260,6 +286,7 @@ const webAcl = new wafv2.CfnWebACL(this, 'WebhookWAF', {
    - See SETUP.md for GitHub App configuration
 
 2. **Set Rotation Reminders**:
+
 ```bash
 # Rotate every 90 days
 aws secretsmanager rotate-secret \
@@ -276,11 +303,13 @@ aws secretsmanager rotate-secret \
 **Risk:** Malicious or buggy workflows could trigger excessive Lambda invocations.
 
 **Current Protection:**
+
 - ✅ Concurrency limit (10)
 
 **Additional Mitigations:**
 
 1. **AWS Budgets**:
+
 ```bash
 aws budgets create-budget \
   --account-id 123456789012 \
@@ -288,12 +317,22 @@ aws budgets create-budget \
 ```
 
 2. **CloudWatch Alarms**:
-```typescript
-new cloudwatch.Alarm(this, 'HighConcurrency', {
-  metric: runnerFunction.metricConcurrentExecutions(),
-  threshold: 8,
-  evaluationPeriods: 2,
-});
+
+```yaml
+# Add to template.yaml
+HighConcurrencyAlarm:
+  Type: AWS::CloudWatch::Alarm
+  Properties:
+    AlarmName: github-runner-high-concurrency
+    MetricName: ConcurrentExecutions
+    Namespace: AWS/Lambda
+    Statistic: Maximum
+    Period: 300
+    EvaluationPeriods: 2
+    Threshold: 8
+    Dimensions:
+      - Name: FunctionName
+        Value: !Ref RunnerFunction
 ```
 
 3. **Service Control Policies** (for Organizations):
@@ -305,6 +344,7 @@ new cloudwatch.Alarm(this, 'HighConcurrency', {
 Before deploying to production:
 
 ### Must Do
+
 - [ ] Scope down IAM permissions to minimum required
 - [ ] Enable branch protection rules
 - [ ] Disable fork pull request workflows
@@ -313,6 +353,7 @@ Before deploying to production:
 - [ ] Configure AWS Budgets and billing alarms
 
 ### Should Do
+
 - [ ] Enable API Gateway rate limiting
 - [ ] Set up CloudWatch alarms for errors/high usage
 - [ ] Use GitHub Apps instead of PATs
@@ -321,6 +362,7 @@ Before deploying to production:
 - [ ] Regular security audits of workflows
 
 ### Consider
+
 - [ ] Deploy runner in VPC with private subnets
 - [ ] Add AWS WAF to API Gateway
 - [ ] Implement approval gates for production deployments
@@ -333,6 +375,7 @@ Before deploying to production:
 ### Detection
 
 **Monitor for:**
+
 - Unusual AWS API calls (CloudTrail)
 - Failed webhook authentication attempts
 - Spike in Lambda invocations
@@ -340,6 +383,7 @@ Before deploying to production:
 - High AWS costs
 
 **CloudWatch Insights Query** (suspicious activity):
+
 ```sql
 fields @timestamp, @message
 | filter @message like /ERROR/
@@ -353,6 +397,7 @@ fields @timestamp, @message
 **If you suspect compromise:**
 
 1. **Immediately:**
+
    ```bash
    # Disable the runner
    aws lambda put-function-concurrency \
@@ -380,16 +425,19 @@ fields @timestamp, @message
 ## Compliance Considerations
 
 ### Data Protection
+
 - Secrets encrypted at rest (AWS KMS)
 - Logs encrypted (CloudWatch)
 - No sensitive data in workflow logs
 
 ### Audit Requirements
+
 - All API calls logged (CloudTrail)
 - Execution logs retained (CloudWatch)
 - Secret access logged
 
 ### Access Control
+
 - IAM role-based access
 - No long-term credentials in Lambda
 - Webhook authentication required

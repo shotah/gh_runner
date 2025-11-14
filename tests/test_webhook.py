@@ -8,17 +8,13 @@ Focused on security-critical and routing logic:
 
 import hashlib
 import hmac
-
-import pytest
-
-# Import functions under test
 import sys
 from pathlib import Path
 
 # Add lambda/webhook to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "lambda" / "webhook"))
 
-from index import should_trigger_runner, verify_signature
+from index import should_trigger_runner, verify_signature  # noqa: E402
 
 
 class TestSignatureVerification:
@@ -32,9 +28,7 @@ class TestSignatureVerification:
         # Generate valid signature
         signature = (
             "sha256="
-            + hmac.new(
-                secret.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256
-            ).hexdigest()
+            + hmac.new(secret.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
         )
 
         assert verify_signature(payload, signature, secret) is True
