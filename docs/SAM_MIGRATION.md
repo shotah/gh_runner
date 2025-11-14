@@ -2,7 +2,7 @@
 
 ## 🎯 Why We Switched
 
-**Date:** November 2024  
+**Date:** November 2024
 **Decision:** Convert from AWS CDK (TypeScript) to SAM CLI (YAML)
 
 ### Reasons

@@ -202,4 +202,3 @@ echo $SHELL
 | **Bash** | Git Bash (included with Git) |
 
 **All Makefile commands work identically on Windows (via Git Bash), Mac, and Linux!** ✅
-

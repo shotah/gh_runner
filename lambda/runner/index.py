@@ -4,7 +4,7 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 import boto3  # type: ignore
 import requests  # type: ignore

@@ -2,7 +2,7 @@ import hashlib
 import hmac
 import json
 import os
-from typing import Any, Dict
+from typing import Any
 
 import boto3  # type: ignore
 
@@ -46,6 +46,54 @@ def verify_signature(payload: str, signature: str, secret: str) -> bool:
     return hmac.compare_digest(expected_signature, signature)
 
 
+def should_trigger_runner(workflow_job: dict[str, Any]) -> bool:
+    """Check if workflow job should trigger our runner based on labels"""
+    labels = workflow_job.get("labels", [])
+    print(f"Job labels: {labels}")
+    return "self-hosted" in labels or "lambda-runner" in labels
+
+
+def invoke_runner_lambda(
+    runner_function_name: str, workflow_job: dict[str, Any], repository: dict[str, Any]
+) -> dict[str, Any]:
+    """Invoke the runner Lambda function for a workflow job"""
+    job_id = workflow_job.get("id")
+    print(f"Triggering runner for job {job_id}")
+
+    try:
+        response = lambda_client.invoke(
+            FunctionName=runner_function_name,
+            InvocationType="Event",  # Async invocation
+            Payload=json.dumps({"workflow_job": workflow_job, "repository": repository}),
+        )
+        print(f"Runner invoked: {response}")
+        return {"statusCode": 200, "body": json.dumps({"message": "Event processed"})}
+    except Exception as e:
+        print(f"Error invoking runner: {str(e)}")
+        return {
+            "statusCode": 500,
+            "body": json.dumps({"error": f"Failed to invoke runner: {str(e)}"}),
+        }
+
+
+def process_workflow_job(payload: dict[str, Any], runner_function_name: str) -> dict[str, Any]:
+    """Process workflow_job event and trigger runner if needed"""
+    action = payload.get("action")
+    workflow_job = payload.get("workflow_job", {})
+
+    print(f"Workflow job action: {action}")
+    print(f'Job ID: {workflow_job.get("id")}')
+    print(f'Job status: {workflow_job.get("status")}')
+
+    # Only trigger runner for 'queued' jobs with matching labels
+    if action == "queued" and should_trigger_runner(workflow_job):
+        repository = payload.get("repository", {})
+        return invoke_runner_lambda(runner_function_name, workflow_job, repository)
+
+    print("Job does not require runner invocation")
+    return {"statusCode": 200, "body": json.dumps({"message": "Event processed"})}
+
+
 def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     """
     Handle GitHub webhook events and trigger runner Lambda
@@ -57,10 +105,8 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         if not runner_function_name:
             raise ValueError("RUNNER_FUNCTION_NAME environment variable not set")
 
-        # Get webhook secret from Secrets Manager
+        # Verify webhook signature
         webhook_secret = get_webhook_secret()
-
-        # Verify signature
         signature = event.get("headers", {}).get("x-hub-signature-256", "")
         body = event.get("body", "")
 
@@ -71,7 +117,6 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         # Parse the event
         payload = json.loads(body)
         event_type = event.get("headers", {}).get("x-github-event", "")
-
         print(f"Received event: {event_type}")
 
         # Handle ping event
@@ -80,45 +125,7 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
         # Handle workflow_job event
         if event_type == "workflow_job":
-            action = payload.get("action")
-            workflow_job = payload.get("workflow_job", {})
-
-            print(f"Workflow job action: {action}")
-            print(f'Job ID: {workflow_job.get("id")}')
-            print(f'Job status: {workflow_job.get("status")}')
-
-            # Only trigger runner for 'queued' jobs
-            if action == "queued":
-                labels = workflow_job.get("labels", [])
-                print(f"Job labels: {labels}")
-
-                # Check if this job is for our self-hosted runner
-                # You can customize this check based on your labels
-                if "self-hosted" in labels or "lambda-runner" in labels:
-                    job_id = workflow_job.get("id")
-                    print(f"Triggering runner for job {job_id}")
-
-                    # Invoke runner Lambda asynchronously
-                    try:
-                        response = lambda_client.invoke(
-                            FunctionName=runner_function_name,
-                            InvocationType="Event",  # Async invocation
-                            Payload=json.dumps(
-                                {
-                                    "workflow_job": workflow_job,
-                                    "repository": payload.get("repository", {}),
-                                }
-                            ),
-                        )
-                        print(f"Runner invoked: {response}")
-                    except Exception as e:
-                        print(f"Error invoking runner: {str(e)}")
-                        return {
-                            "statusCode": 500,
-                            "body": json.dumps({"error": f"Failed to invoke runner: {str(e)}"}),
-                        }
-                else:
-                    print("Job labels do not match " "self-hosted runner criteria")
+            return process_workflow_job(payload, runner_function_name)
 
         return {"statusCode": 200, "body": json.dumps({"message": "Event processed"})}
 

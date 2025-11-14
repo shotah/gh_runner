@@ -229,4 +229,3 @@ After setup, verify:
 ---
 
 **Questions?** Check [SAM_MIGRATION.md](SAM_MIGRATION.md) or the [aws_fastapi_template](https://github.com/shotah/aws_fastapi_template) for similar patterns!
-
