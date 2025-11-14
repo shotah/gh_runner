@@ -41,7 +41,7 @@ npm run deploy
 
 Tags are automatically applied from GitHub secrets (see `.github/workflows/deploy.yml`):
 - `ENVIRONMENT` secret → `Environment` tag
-- `COST_CENTER` secret → `CostCenter` tag  
+- `COST_CENTER` secret → `CostCenter` tag
 - `OWNER` secret → `Owner` tag
 
 ---
@@ -286,4 +286,3 @@ aws resourcegroupstaggingapi get-resources \
 ```
 
 Done! 🏷️ All your resources are now tagged for cost tracking!
-

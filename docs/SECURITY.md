@@ -148,7 +148,7 @@ runnerFunction.addToRolePolicy(new iam.PolicyStatement({
    on:
      push:
        branches: [main]
-   
+
    # Require manual approval for deployments
    jobs:
      deploy:
@@ -342,8 +342,8 @@ Before deploying to production:
 **CloudWatch Insights Query** (suspicious activity):
 ```sql
 fields @timestamp, @message
-| filter @message like /ERROR/ 
-    or @message like /unauthorized/ 
+| filter @message like /ERROR/
+    or @message like /unauthorized/
     or @message like /Invalid signature/
 | sort @timestamp desc
 ```
@@ -358,7 +358,7 @@ fields @timestamp, @message
    aws lambda put-function-concurrency \
      --function-name github-runner-executor \
      --reserved-concurrent-executions 0
-   
+
    # Rotate GitHub token
    aws secretsmanager put-secret-value \
      --secret-id github-runner/token \
@@ -422,4 +422,3 @@ If you discover a security vulnerability in this project, please report it respo
 ---
 
 **Remember:** Security is a continuous process, not a one-time setup. Regularly review and update your security posture as your usage evolves.
-

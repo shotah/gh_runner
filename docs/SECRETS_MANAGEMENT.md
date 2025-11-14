@@ -237,4 +237,3 @@ See also:
 - [SETUP.md](../SETUP.md) - Full setup guide
 - [SECURITY.md](../SECURITY.md) - Security considerations
 - [ARCHITECTURE.md](../ARCHITECTURE.md) - How it all works
-

@@ -35,7 +35,7 @@ jobs:
           # Option 1: Use OIDC (recommended - no long-lived credentials)
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
-          
+
           # Option 2: Use access keys (less secure)
           # aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           # aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -54,4 +54,3 @@ jobs:
         run: |
           echo "Deployment complete!"
           echo "Get webhook URL with: aws cloudformation describe-stacks --stack-name GithubRunnerStack --query 'Stacks[0].Outputs[?OutputKey==\`WebhookUrl\`].OutputValue' --output text"
-

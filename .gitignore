@@ -44,4 +44,3 @@ ENV/
 # CDK Context & Staging files
 .cdk.staging/
 cdk.context.json
-

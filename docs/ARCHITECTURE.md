@@ -71,9 +71,9 @@ This document describes the architecture of the Lambda-based GitHub Actions runn
 
 ### 2. Webhook Receiver Lambda
 
-**Language:** Python 3.12  
-**Memory:** 256 MB  
-**Timeout:** 30 seconds  
+**Language:** Python 3.12
+**Memory:** 256 MB
+**Timeout:** 30 seconds
 
 **Responsibilities:**
 1. Receive webhook events from API Gateway
@@ -110,11 +110,11 @@ Return 200 OK
 
 ### 3. Runner Executor Lambda
 
-**Language:** Python 3.12  
-**Container:** Docker (for AWS CLI/SAM)  
-**Memory:** 3008 MB (high for performance)  
-**Timeout:** 900 seconds (15 minutes)  
-**Ephemeral Storage:** 10 GB  
+**Language:** Python 3.12
+**Container:** Docker (for AWS CLI/SAM)
+**Memory:** 3008 MB (high for performance)
+**Timeout:** 900 seconds (15 minutes)
+**Ephemeral Storage:** 10 GB
 
 **Responsibilities:**
 1. Retrieve GitHub token from Secrets Manager
@@ -382,7 +382,7 @@ Create CloudWatch Dashboard with:
 2. Update GitHub token secret
 3. Update webhook URL in GitHub
 
-**RTO:** ~10 minutes  
+**RTO:** ~10 minutes
 **RPO:** 0 (no data loss)
 
 ## Future Enhancements
@@ -442,4 +442,3 @@ Create CloudWatch Dashboard with:
 - [GitHub Actions Runner](https://github.com/actions/runner)
 - [GitHub Webhooks](https://docs.github.com/en/developers/webhooks-and-events/webhooks)
 - [AWS CDK Best Practices](https://docs.aws.amazon.com/cdk/latest/guide/best-practices.html)
-

@@ -5,14 +5,17 @@
 **Date:** November 2024  
 **Decision:** Convert from AWS CDK (TypeScript) to SAM CLI (YAML)
 
-### Reasons:
+### Reasons
+
 1. ✅ **Team Buy-in** - Team already uses SAM CLI (aws_fastapi_template pattern)
 2. ✅ **Platform Team Approval** - Matches approved patterns
 3. ✅ **Consistency** - Same deployment tools across all projects
 4. ✅ **Supportability** - Other team members can support SAM templates
 
-### CDK Work Preserved:
+### CDK Work Preserved
+
 The complete CDK implementation is preserved in the `cdk-exploration` branch for reference:
+
 ```bash
 git checkout cdk-exploration  # View CDK version
 ```
@@ -59,6 +62,7 @@ gh_runner/
 ## 🚀 Quick Start with SAM
 
 ### **Prerequisites**
+
 ```bash
 # Install SAM CLI
 brew install aws-sam-cli  # macOS
@@ -69,6 +73,7 @@ brew install aws-sam-cli  # macOS
 ```
 
 ### **Build & Deploy**
+
 ```bash
 # 1. Build the application
 make build
@@ -88,6 +93,7 @@ make get-secret ENV=dev
 ## 🔄 Migration Mapping
 
 ### **Environment Variables**
+
 Still loaded from `.env` file automatically!
 
 ```bash
@@ -125,12 +131,14 @@ OWNER=DevOps
 ## 🎨 What Stayed the Same
 
 ### ✅ **Lambda Functions**
+
 - Same Python code
 - Same Docker image approach
 - Same pre-baked GitHub runner
 - Same environment variables
 
 ### ✅ **Infrastructure**
+
 - Same AWS resources:
   - API Gateway
   - Lambda Functions
@@ -140,6 +148,7 @@ OWNER=DevOps
   - IAM Roles
 
 ### ✅ **Features**
+
 - Webhook signature verification
 - Ephemeral runners
 - Auto-scaling
@@ -148,6 +157,7 @@ OWNER=DevOps
 - Resource tagging
 
 ### ✅ **Documentation**
+
 - All docs preserved in `/docs`
 - Examples in `/examples`
 - Helper scripts in `/scripts`
@@ -157,6 +167,7 @@ OWNER=DevOps
 ## 🆕 New Features with SAM
 
 ### **1. Local Testing** 🎉
+
 ```bash
 # Test webhook function locally
 sam local invoke WebhookFunction -e events/webhook-event.json
@@ -167,6 +178,7 @@ curl http://localhost:3000/
 ```
 
 ### **2. Simpler Template**
+
 ```yaml
 # SAM is more concise for common patterns
 WebhookFunction:
@@ -179,6 +191,7 @@ WebhookFunction:
 ```
 
 ### **3. Environment-Based Configs**
+
 ```toml
 # samconfig.toml
 [dev.deploy.parameters]
@@ -195,6 +208,7 @@ parameter_overrides = ["Environment=prod"]
 ## 🔧 Development Workflow
 
 ### **Before (CDK)**
+
 ```bash
 npm install
 npm run build
@@ -203,6 +217,7 @@ cdk deploy
 ```
 
 ### **After (SAM)**
+
 ```bash
 make build        # sam build
 make deploy-dev   # sam deploy
@@ -215,17 +230,20 @@ make deploy-dev   # sam deploy
 ## 📚 Resources
 
 ### **SAM Documentation**
+
 - [SAM CLI Reference](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/what-is-sam.html)
 - [SAM Template Specification](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-specification.html)
 - [SAM Policy Templates](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-policy-templates.html)
 
 ### **aws_fastapi_template Reference**
+
 - [GitHub Repository](https://github.com/shotah/aws_fastapi_template)
 - Uses same SAM patterns
 - Similar Makefile structure
 - Proven in production
 
 ### **CDK Branch (Reference)**
+
 ```bash
 git checkout cdk-exploration  # View CDK implementation
 ```
@@ -235,19 +253,25 @@ git checkout cdk-exploration  # View CDK implementation
 ## 🐛 Troubleshooting
 
 ### **"Command not found: sam"**
+
 **Solution:** Install SAM CLI
+
 ```bash
 brew install aws-sam-cli  # macOS
 ```
 
 ### **"Docker not running"**
+
 **Solution:** Start Docker Desktop
+
 ```bash
 docker ps  # Verify Docker is running
 ```
 
 ### **"Stack already exists"**
+
 **Solution:** The stack from CDK might still exist
+
 ```bash
 # Delete old CDK stack first
 aws cloudformation delete-stack --stack-name GithubRunnerStack
@@ -257,7 +281,9 @@ make deploy-dev
 ```
 
 ### **"ECR repository not found"**
+
 **Solution:** Deploy stack first, then push Docker image
+
 ```bash
 make deploy-dev            # Creates ECR repository
 make docker-build          # Build image
@@ -300,4 +326,3 @@ After migration, verify:
 - **CDK Reference:** `git checkout cdk-exploration`
 
 **Migration complete! Welcome to SAM! 🚀**
-

@@ -47,7 +47,7 @@ parameter_overrides = [
 tags = "Environment=sandbox Project=github-runner ManagedBy=SAM"
 
 # ============================================
-# Development Environment  
+# Development Environment
 # ============================================
 [dev.deploy.parameters]
 stack_name = "github-runner-dev"
@@ -79,4 +79,3 @@ parameter_overrides = [
     "Owner=Platform-Team"
 ]
 tags = "Environment=prod Project=github-runner ManagedBy=SAM"
-

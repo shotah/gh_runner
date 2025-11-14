@@ -1,0 +1,41 @@
+[tool.black]
+line-length = 99
+target-version = ["py313"]
+
+[tool.isort]
+profile = "black"
+line_length = 99
+
+[tool.flake8]
+max-line-length = 99
+# Ignore rules that conflict with Black formatter
+# E203: whitespace before ':' (Black handles this)
+# E501: line too long (Black handles this)
+# W503: line break before binary operator (Black prefers this style)
+ignore = ["E203", "E501", "W503"]
+exclude = [
+    ".aws-sam",
+    "__pycache__",
+    "env",
+    ".env",
+    ".vscode",
+    "*.md",
+    "*.toml",
+    "*.yaml",
+    "*.yml",
+    "*.json",
+    "Pipfile*",
+    "LICENSE",
+    "makefile",
+    ".*"
+]
+max-complexity = 8
+max-cognitive-complexity = 8
+
+[tool.pytest.ini_options]
+addopts = "--cov=. --cov-branch --cov-report term-missing --cov-fail-under=75 --color=yes"
+pythonpath = "."
+testpaths = ["tests"]
+
+[tool.coverage.run]
+omit = ["tests/*", "*__init__*", "scrap*"]

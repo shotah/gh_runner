@@ -179,7 +179,7 @@ GitHub Apps provide better security and granular permissions than Personal Acces
      - Metadata: Read (automatically selected)
    - **Subscribe to events:**
      - ✅ Workflow job
-   - **Where can this GitHub App be installed**: 
+   - **Where can this GitHub App be installed**:
      - Choose based on your needs (only this account or any account)
 
 3. **Create the app**
@@ -233,17 +233,17 @@ on:
 jobs:
   test:
     runs-on: [self-hosted, lambda-runner]
-    
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      
+
       - name: Test AWS CLI
         run: aws --version
-      
+
       - name: Test SAM CLI
         run: sam --version
-      
+
       - name: Check environment
         run: |
           echo "Runner: $RUNNER_NAME"
@@ -351,7 +351,7 @@ If jobs are timing out:
        runs-on: [self-hosted, lambda-runner]
        steps:
          - run: sam build
-     
+
      deploy:
        needs: build
        runs-on: [self-hosted, lambda-runner]
@@ -401,4 +401,3 @@ Once everything is working:
 - Verify IAM permissions match your needs
 
 Happy CI/CD! 🚀
-

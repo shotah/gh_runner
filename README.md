@@ -34,17 +34,17 @@ GitHub Webhook → API Gateway → Webhook Lambda → Runner Lambda (with AWS CL
 
 ## Features
 
-✅ **Serverless and on-demand** - Pay only for execution time  
-✅ **Auto-scaling** - Up to 10 concurrent runners  
+✅ **Serverless and on-demand** - Pay only for execution time
+✅ **Auto-scaling** - Up to 10 concurrent runners
 ✅ **Pre-installed tools:**
   - AWS CLI v2 (latest)
   - AWS SAM CLI (latest)
   - Python 3.13
-  - Git, tar, gzip, jq, and common utilities  
-✅ **Ephemeral runners** - Auto-cleanup after each job  
-✅ **Security** - Webhook signature verification  
-✅ **AWS-ready** - Comprehensive IAM permissions for deployments  
-✅ **Fast** - High-memory Lambda for quick execution  
+  - Git, tar, gzip, jq, and common utilities
+✅ **Ephemeral runners** - Auto-cleanup after each job
+✅ **Security** - Webhook signature verification
+✅ **AWS-ready** - Comprehensive IAM permissions for deployments
+✅ **Fast** - High-memory Lambda for quick execution
 
 ## Prerequisites
 
@@ -202,20 +202,20 @@ jobs:
     runs-on: [self-hosted, lambda-runner]
     # Or be more specific:
     # runs-on: [self-hosted, sam-cli, python3.13]
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: us-east-1
-      
+
       - name: SAM Build
         run: sam build
-      
+
       - name: SAM Deploy
         run: |
           sam deploy \
@@ -237,7 +237,7 @@ The runner Lambda function supports these environment variables:
 
 ### Customizing Permissions
 
-⚠️ **Important:** The default IAM permissions are very broad! 
+⚠️ **Important:** The default IAM permissions are very broad!
 
 Edit `template.yaml` to adjust IAM permissions based on your needs. See **[docs/SECURITY.md](docs/SECURITY.md)** for guidance on scoping down permissions.
 
@@ -369,7 +369,7 @@ Or view specific logs:
 # Webhook logs
 make logs-webhook
 
-# Runner logs  
+# Runner logs
 make logs-runner
 ```
 

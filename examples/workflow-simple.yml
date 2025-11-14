@@ -9,25 +9,24 @@ on:
 jobs:
   test:
     runs-on: [self-hosted, lambda-runner]
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Verify AWS CLI
         run: |
           echo "Testing AWS CLI..."
           aws --version
-      
+
       - name: Verify SAM CLI
         run: |
           echo "Testing SAM CLI..."
           sam --version
-      
+
       - name: Show environment info
         run: |
           echo "Runner: $RUNNER_NAME"
           echo "OS: $RUNNER_OS"
           echo "Architecture: $RUNNER_ARCH"
           echo "Working directory: $(pwd)"
-

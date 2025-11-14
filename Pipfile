@@ -1,0 +1,28 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+boto3 = "*"
+requests = "*"
+
+[dev-packages]
+pytest = "*"
+pytest-cov = "*"
+pre-commit = "*"
+isort = "*"
+black = "*"
+requests-mock = {extras = ["fixture"], version = "*"}
+flake8 = "*"
+Flake8-pyproject = "*"
+flake8-annotations-complexity = "*"
+flake8-expression-complexity = "*"
+flake8-cognitive-complexity = "*"
+flake8-adjustable-complexity = "*"
+requests-aws4auth = "*"
+moto = {extras = ["s3"], version = "*"}
+python-dotenv = "*"
+
+[requires]
+python_version = "3.13"

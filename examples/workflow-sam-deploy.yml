@@ -14,26 +14,26 @@ jobs:
   deploy:
     # Target runner with SAM CLI capability
     runs-on: [self-hosted, sam-cli, aws-cli]
-    
+
     permissions:
       id-token: write  # Required for OIDC
       contents: read
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           role-session-name: GitHubActions
           aws-region: ${{ env.AWS_REGION }}
-      
+
       - name: SAM Build
         run: |
           sam build --use-container
-      
+
       - name: SAM Deploy
         run: |
           sam deploy \
@@ -43,11 +43,10 @@ jobs:
             --no-fail-on-empty-changeset \
             --capabilities CAPABILITY_IAM \
             --region ${{ env.AWS_REGION }}
-      
+
       - name: Get Stack Outputs
         run: |
           aws cloudformation describe-stacks \
             --stack-name ${{ env.SAM_STACK_NAME }} \
             --query 'Stacks[0].Outputs' \
             --region ${{ env.AWS_REGION }}
-

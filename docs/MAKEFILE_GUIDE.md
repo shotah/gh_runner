@@ -429,4 +429,3 @@ chmod +x scripts/*.sh
 - [Setup Guide](SETUP.md) - Complete setup instructions
 - [Secrets Management](SECRETS_MANAGEMENT.md) - Managing tokens and secrets
 - [Contributing](CONTRIBUTING.md) - Development guidelines
-

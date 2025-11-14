@@ -2,7 +2,7 @@ AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: >
   GitHub Actions Lambda Runner
-  
+
   Serverless self-hosted GitHub Actions runner with AWS CLI and SAM CLI pre-installed.
   Runs GitHub workflow jobs on-demand with automatic scaling.
 
@@ -33,18 +33,18 @@ Parameters:
       - dev
       - prod
     Description: Deployment environment
-  
+
   GitHubToken:
     Type: String
     NoEcho: true
     Default: REPLACE_ME
     Description: GitHub Personal Access Token (will be stored in Secrets Manager)
-  
+
   CostCenter:
     Type: String
     Default: Engineering
     Description: Cost center tag for resource tracking
-  
+
   Owner:
     Type: String
     Default: DevOps
@@ -206,7 +206,7 @@ Resources:
               Action:
                 - secretsmanager:GetSecretValue
               Resource: !Ref GitHubTokenSecret
-            
+
             # CloudFormation permissions for SAM/CDK deploy
             - Effect: Allow
               Action:
@@ -225,7 +225,7 @@ Resources:
                 - cloudformation:DeleteChangeSet
                 - cloudformation:ListStackResources
               Resource: '*'
-            
+
             # S3 permissions for SAM artifacts
             - Effect: Allow
               Action:
@@ -237,7 +237,7 @@ Resources:
                 - s3:GetBucketLocation
                 - s3:GetBucketVersioning
               Resource: '*'
-            
+
             # Lambda permissions for SAM deploy
             - Effect: Allow
               Action:
@@ -257,7 +257,7 @@ Resources:
                 - lambda:RemovePermission
                 - lambda:InvokeFunction
               Resource: '*'
-            
+
             # IAM permissions for execution roles
             - Effect: Allow
               Action:
@@ -272,13 +272,13 @@ Resources:
                 - iam:GetRolePolicy
                 - iam:TagRole
               Resource: '*'
-            
+
             # API Gateway permissions
             - Effect: Allow
               Action:
                 - apigateway:*
               Resource: '*'
-            
+
             # CloudWatch Logs
             - Effect: Allow
               Action:
@@ -288,7 +288,7 @@ Resources:
                 - logs:DescribeLogGroups
                 - logs:DescribeLogStreams
               Resource: '*'
-            
+
             # ECR permissions for Docker images
             - Effect: Allow
               Action:
@@ -303,19 +303,19 @@ Resources:
                 - ecr:CreateRepository
                 - ecr:DescribeRepositories
               Resource: '*'
-            
+
             # DynamoDB permissions (commonly used)
             - Effect: Allow
               Action:
                 - dynamodb:*
               Resource: '*'
-            
+
             # SQS permissions (commonly used)
             - Effect: Allow
               Action:
                 - sqs:*
               Resource: '*'
-            
+
             # SNS permissions (commonly used)
             - Effect: Allow
               Action:
@@ -386,28 +386,27 @@ Outputs:
     Value: !Sub https://${WebhookApi}.execute-api.${AWS::Region}.amazonaws.com/prod/
     Export:
       Name: !Sub github-runner-webhook-url-${Environment}
-  
+
   WebhookSecretArn:
     Description: ARN of the webhook secret - retrieve value to configure in GitHub
     Value: !Ref WebhookSecret
     Export:
       Name: !Sub github-runner-webhook-secret-${Environment}
-  
+
   GitHubTokenSecretArn:
     Description: ARN of the GitHub token secret - update this with your PAT
     Value: !Ref GitHubTokenSecret
     Export:
       Name: !Sub github-runner-token-secret-${Environment}
-  
+
   RunnerFunctionArn:
     Description: ARN of the runner Lambda function
     Value: !GetAtt RunnerFunction.Arn
     Export:
       Name: !Sub github-runner-function-${Environment}
-  
+
   ECRRepositoryUri:
     Description: ECR repository URI for runner Docker image
     Value: !GetAtt RunnerECRRepository.RepositoryUri
     Export:
       Name: !Sub github-runner-ecr-${Environment}
-

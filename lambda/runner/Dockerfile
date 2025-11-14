@@ -45,4 +45,3 @@ RUN aws --version && sam --version && cat /opt/actions-runner/version.txt
 
 # Set the CMD to your handler
 CMD [ "index.handler" ]
-
