@@ -3,6 +3,7 @@
 ifneq ("$(wildcard .env)","")
     include .env
 endif
+# Cross-platform Makefile (works on Windows via Git Bash, Mac, Linux)
 SHELL := /bin/bash
 export
 
@@ -70,12 +71,15 @@ ifndef ENV
 	@exit 1
 endif
 	@echo "🚀 Pushing Docker image to ECR for $(ENV) environment..."
+	@echo "Logging in to ECR..."
 	@aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin $$(aws sts get-caller-identity --query Account --output text).dkr.ecr.us-east-1.amazonaws.com
-	@REPO_URI=$$(aws cloudformation describe-stacks --stack-name github-runner-$(ENV) --query "Stacks[0].Outputs[?OutputKey=='ECRRepositoryUri'].OutputValue" --output text 2>/dev/null || echo ""); \
-	if [ -z "$$REPO_URI" ]; then \
-		echo "❌ Error: Stack github-runner-$(ENV) not found or ECR repository not created"; \
+	@echo "Getting ECR repository URI..."
+	@REPO_URI=$$(aws cloudformation describe-stacks --stack-name github-runner-$(ENV) --query "Stacks[0].Outputs[?OutputKey=='ECRRepositoryUri'].OutputValue" --output text 2>/dev/null); \
+	if [ -z "$$REPO_URI" ] || [ "$$REPO_URI" = "None" ]; then \
+		echo "❌ Error: ECR repository not found. Deploy stack first: make deploy-$(ENV)"; \
 		exit 1; \
 	fi; \
+	echo "Tagging image for $$REPO_URI"; \
 	docker tag github-runner-executor:latest $$REPO_URI:latest; \
 	docker push $$REPO_URI:latest; \
 	echo "✅ Image pushed to $$REPO_URI:latest"
@@ -109,19 +113,14 @@ deploy-dev: build
 	@echo "✅ Dev deployment complete!"
 	@$(MAKE) get-secret ENV=dev
 
-# Deploy to prod (requires confirmation)
+# Deploy to prod (SAM will prompt for confirmation)
 deploy-prod: build
 	@echo "🚀 Deploying to prod environment..."
 	@echo "⚠️  This will deploy to PRODUCTION!"
-	@read -p "Are you sure? [y/N] " -n 1 -r; \
-	echo; \
-	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
-		sam deploy --config-env prod; \
-		echo "✅ Prod deployment complete!"; \
-		$(MAKE) get-secret ENV=prod; \
-	else \
-		echo "Cancelled."; \
-	fi
+	@echo "⚠️  SAM will prompt you for confirmation..."
+	sam deploy --config-env prod
+	@echo "✅ Prod deployment complete!"
+	$(MAKE) get-secret ENV=prod
 
 # ============================================
 # Configuration Commands
@@ -134,12 +133,13 @@ ifndef ENV
 	@exit 1
 endif
 	@echo "🔑 Configuring GitHub token for $(ENV) environment..."
-	@read -p "Enter GitHub Personal Access Token: " TOKEN; \
+	@echo "Enter your GitHub Personal Access Token and press Enter:"
+	@read TOKEN && \
 	aws secretsmanager put-secret-value \
 		--secret-id github-runner/token-$(ENV) \
 		--secret-string "$$TOKEN" \
-		--region us-east-1
-	@echo "✅ GitHub token configured!"
+		--region us-east-1 && \
+	echo "✅ GitHub token configured!"
 
 # Get webhook secret
 get-secret:
@@ -166,16 +166,15 @@ endif
 # Monitoring Commands
 # ============================================
 
-# Tail all logs
+# Tail all logs (runner only - use logs-webhook for webhook logs)
 logs:
 ifndef ENV
 	@echo "❌ Error: ENV not specified. Usage: make logs ENV=dev"
 	@exit 1
 endif
-	@echo "📡 Tailing logs for $(ENV) environment (Ctrl+C to exit)..."
-	@echo "Webhook and Runner logs combined:"
-	@aws logs tail /aws/lambda/github-runner-webhook-$(ENV) --follow --format short & \
-	aws logs tail /aws/lambda/github-runner-executor-$(ENV) --follow --format short
+	@echo "📡 Tailing runner logs for $(ENV) environment (Ctrl+C to exit)..."
+	@echo "Tip: Open another terminal and run 'make logs-webhook ENV=$(ENV)' for webhook logs"
+	aws logs tail /aws/lambda/github-runner-executor-$(ENV) --follow
 
 # Tail webhook logs only
 logs-webhook:
@@ -202,26 +201,21 @@ endif
 # Destroy sandbox stack
 destroy-sandbox:
 	@echo "💣 Destroying sandbox stack..."
-	@sam delete --stack-name github-runner-sandbox --no-prompts --region us-east-1
+	sam delete --config-env sandbox --no-prompts
 	@echo "✅ Sandbox stack destroyed"
 
 # Destroy dev stack
 destroy-dev:
 	@echo "💣 Destroying dev stack..."
-	@sam delete --stack-name github-runner-dev --no-prompts --region us-east-1
+	sam delete --config-env dev --no-prompts
 	@echo "✅ Dev stack destroyed"
 
-# Destroy prod stack
+# Destroy prod stack (requires manual confirmation in SAM)
 destroy-prod:
 	@echo "💣 Destroying prod stack..."
 	@echo "⚠️  This will DESTROY the PRODUCTION stack!"
-	@read -p "Are you sure? Type 'destroy' to confirm: " CONFIRM; \
-	if [ "$$CONFIRM" = "destroy" ]; then \
-		sam delete --stack-name github-runner-prod --region us-east-1; \
-		echo "✅ Prod stack destroyed"; \
-	else \
-		echo "Cancelled."; \
-	fi
+	@echo "⚠️  SAM will prompt you for confirmation..."
+	sam delete --config-env prod
 
 # ============================================
 # Maintenance Commands
@@ -230,8 +224,7 @@ destroy-prod:
 # Clean build artifacts
 clean:
 	@echo "🧹 Cleaning build artifacts..."
-	@rm -rf .aws-sam/
-	@rm -rf dist/
+	@rm -rf .aws-sam/ dist/
 	@find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 	@find . -type f -name "*.pyc" -delete 2>/dev/null || true
 	@echo "✅ Build artifacts cleaned"
